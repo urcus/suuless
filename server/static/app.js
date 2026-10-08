@@ -151,16 +151,45 @@ async function refresh(){
   $('average').textContent=t('average',number(data.period.average_per_day),number(data.period.days));
   $('all-time').textContent=`${t('quantity_count',number(data.total.quantity))} · ${costs(data.total)}`;
   $('target-label').textContent=t('target_label',number(settings.daily_target));$('timezone-label').textContent=t('timezone_label',data.timezone);
-  $('chart').replaceChildren();$('daily-table').replaceChildren();
-  const max=Math.max(1,...data.daily.map(day=>day.quantity));
-  for(const day of data.daily){
-    const col=document.createElement('div');col.className='bar-column';col.title=`${dayLabel(day.date)} : ${t('quantity_count',number(day.quantity))}, ${costs(day)}`;
-    const value=cell(number(day.quantity),'b'),bar=document.createElement('div');bar.className='bar';bar.style.height=`${day.quantity/max*135}px`;
-    col.append(value,bar,cell(day.date.slice(8),'span'));$('chart').append(col);
-    const tr=document.createElement('tr');tr.append(cell(dayLabel(day.date)),cell(number(day.quantity)),cell(costs(day)));$('daily-table').append(tr);
-  }
+  analysisData=data;renderAnalysis();
   await loadHistory();
 }
+let analysisData;
+const signed=value=>(value>0?'+':'')+number(value);
+const percent=value=>value===null?'—':signed(value)+'%';
+function renderAnalysis(){
+  if(!analysisData)return;
+  const a=analysisData.analysis,comparison=a.comparison;
+  $('analysis-average-quantity').textContent=number(a.average_quantity_per_day);
+  $('analysis-average-cost').textContent=costs({costs:a.average_cost_per_day});
+  $('analysis-range').textContent=t('analysis_range',number(a.minimum_quantity),number(a.maximum_quantity),number(a.days_with_entries));
+  $('analysis-today').hidden=!a.includes_today;
+  $('analysis-previous').textContent=a.previous_period.days?t('previous_dates',dayLabel(a.previous_period.start),dayLabel(a.previous_period.end)):t('no_comparison');
+  $('analysis-comparison').textContent=comparison.quantity_delta===null?'—':t('quantity_count',signed(comparison.quantity_delta))+' ('+percent(comparison.quantity_percent)+')';
+  $('analysis-cost-comparison').textContent=Object.entries(comparison.cost_deltas).map(([code,value])=>(value>0?'+':'')+money(value,code)+' ('+percent(comparison.cost_percent[code])+')').join(' · ');
+  const codes=Object.keys(a.average_cost_per_day),selected=$('chart-currency').value;
+  $('chart-currency').replaceChildren(...codes.map(code=>new Option(code,code,false,code===selected)));
+  const costMode=$('chart-measure').value==='cost',code=$('chart-currency').value;
+  $('chart-currency-label').hidden=!costMode;
+  $('chart').setAttribute('aria-label',t(costMode?'cost':'daily_consumption'));
+  const average=costMode?a.average_cost_per_day[code]:a.average_quantity_per_day;
+  const values=a.daily.map(day=>costMode?day.costs[code]:day.quantity),max=Math.max(1,average,...values);
+  $('chart').replaceChildren();$('daily-table').replaceChildren();
+  for(const [index,day] of a.daily.entries()){
+    const value=values[index],col=document.createElement('div');col.className='bar-column';
+    col.title=dayLabel(day.date)+' : '+(costMode?money(value,code):t('quantity_count',number(value)));
+    const slot=document.createElement('div');slot.className='bar-slot';
+    const bar=document.createElement('div');bar.className='bar';bar.style.height=`${value/max*135}px`;
+    const mean=document.createElement('div');mean.className='mean-tick';mean.style.bottom=`${average/max*135}px`;
+    slot.append(bar,mean);col.append(cell(number(value),'b'),slot,cell(day.date.slice(8),'span'));$('chart').append(col);
+    const tr=document.createElement('tr');
+    tr.append(cell(dayLabel(day.date)),cell(number(day.quantity)),cell(signed(day.quantity_delta)+' ('+percent(day.quantity_percent)+')'),cell(costs(day)),
+      cell(Object.entries(day.cost_deltas).map(([currency,delta])=>(delta>0?'+':'')+money(delta,currency)+' ('+percent(day.cost_percent[currency])+')').join(' · ')));
+    $('daily-table').append(tr);
+  }
+}
+action('chart-measure','change',renderAnalysis);
+action('chart-currency','change',renderAnalysis);
 async function loadTokens(){
   const rows=await api('/tokens');$('tokens').replaceChildren();
   for(const row of rows){

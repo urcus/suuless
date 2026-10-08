@@ -2,7 +2,7 @@
   "name": "stop-clop-web-checks",
   "private": true,
   "scripts": {
-    "test:web": "node tests/web-smoke.mjs && node tests/web-international.mjs && node tests/web-timezones.mjs && node tests/web-settings-sync.mjs"
+    "test:web": "node tests/web-smoke.mjs && node tests/web-international.mjs && node tests/web-timezones.mjs && node tests/web-settings-sync.mjs && node tests/web-analysis.mjs"
   },
   "devDependencies": {
     "playwright": "1.61.1"

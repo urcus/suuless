@@ -14,6 +14,8 @@ from pathlib import Path
 from .timezones import (VALID_TIMEZONES, ALIASES, TZDATA_VERSION, get_zone,
                         canonical_timezone, timezone_catalog, timezone_info)
 
+from .analysis import analyze
+
 from flask import Flask, g, jsonify, request, send_from_directory
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -417,7 +419,19 @@ def create_app(config=None):
         for day in daily.values():
             for code, amount in day['amounts'].items():
                 period_amounts[code] = period_amounts.get(code, 0) + amount
-        return jsonify(start=start.isoformat(), end=end.isoformat(), timezone=g.user['timezone'],
+        previous_start, previous_end = start - timedelta(days=days), start - timedelta(days=1)
+        previous = []
+        if previous_start.year >= 2000:
+            previous_days = {(previous_start + timedelta(days=i)).isoformat(): {'quantity': 0, 'amounts': {}} for i in range(days)}
+            for row in entries(previous_start, previous_end, tz):
+                day = previous_days[datetime.fromisoformat(row['occurred_at']).astimezone(tz).date().isoformat()]
+                day['quantity'] += row['quantity']
+                day['amounts'][row['currency']] = day['amounts'].get(row['currency'], 0) + row['quantity'] * row['unit_cost_micros']
+            previous = list(previous_days.values())
+        analysis = analyze([dict(date=d, **v) for d, v in daily.items()], previous, g.user['currency'],
+                           previous_start.isoformat() if previous else None,
+                           previous_end.isoformat() if previous else None, end == today)
+        return jsonify(analysis=analysis, start=start.isoformat(), end=end.isoformat(), timezone=g.user['timezone'],
                        today=total('AND occurred_at>=? AND occurred_at<?', (low, high)), total=total(),
                        period=dict(quantity=quantity, **cost_summary(period_amounts, g.user['currency']),
                                    average_per_day=round(quantity / days, 2), days=days,

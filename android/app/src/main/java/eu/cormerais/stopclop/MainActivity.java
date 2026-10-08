@@ -8,11 +8,7 @@ import android.view.View;
 import android.widget.*;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
 import java.net.URI;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
@@ -58,6 +54,14 @@ public final class MainActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out); out.putString("pendingKey", pendingKey); out.putString("pendingPayload", pendingPayload);
     }
+    @Override protected void onRestart() {
+        super.onRestart();
+        // Returning from the launcher must include additions made through the widget.
+        if (!busy && page.equals("dashboard")) {
+            token = TokenStore.load(this);
+            if (token.isEmpty()) login(); else dashboard();
+        }
+    }
     @Override protected void onDestroy() { network.shutdownNow(); super.onDestroy(); }
     private int dp(int n) { return (int) (n * getResources().getDisplayMetrics().density); }
     private void screen(String title) {
@@ -102,38 +106,12 @@ public final class MainActivity extends Activity {
     }
     private static class ExpiredSession extends Exception { ExpiredSession(String message) { super(message); } }
     private Object api(String path, String method, JSONObject data, String key) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(server + "/api" + path).openConnection();
-        try {
-            connection.setConnectTimeout(10000); connection.setReadTimeout(15000); connection.setInstanceFollowRedirects(false);
-            connection.setRequestMethod(method); connection.setUseCaches(false);
-            connection.setRequestProperty("Accept-Language", language);
-            if (!token.isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + token);
-            if (key != null) connection.setRequestProperty("Idempotency-Key", key);
-            if (data != null) {
-                connection.setDoOutput(true); connection.setRequestProperty("Content-Type", "application/json");
-                try (var stream = connection.getOutputStream()) { stream.write(data.toString().getBytes(StandardCharsets.UTF_8)); }
-            }
-            int code = connection.getResponseCode();
-            if (code == 204) return new JSONObject();
-            String raw;
-            try (InputStream stream = code >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
-                if (stream == null) raw = "{}";
-                else {
-                    java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
-                    byte[] buffer = new byte[4096]; int length;
-                    while ((length = stream.read(buffer)) != -1) bytes.write(buffer, 0, length);
-                    raw = bytes.toString(StandardCharsets.UTF_8.name());
-                }
-            }
-            if (code < 200 || code >= 300) {
-                String message;
-                try { message = new JSONObject(raw).optString("error", t("http_error", code)); } catch (Exception e) { message = t("http_error", code); }
-                if (code >= 400 && code < 500 && path.equals("/cigarettes")) { pendingKey = null; pendingPayload = null; }
-                if (code == 401 && !path.startsWith("/auth/")) throw new ExpiredSession(message);
-                throw new Exception(message);
-            }
-            return raw.startsWith("[") ? new JSONArray(raw) : new JSONObject(raw);
-        } finally { connection.disconnect(); }
+        try { return ApiClient.request(server, token, language, path, method, data, key); }
+        catch (ApiClient.HttpError error) {
+            if(error.status>=400&&error.status<500&&path.equals("/cigarettes")){pendingKey=null;pendingPayload=null;}
+            if(error.status==401&&!path.startsWith("/auth/"))throw new ExpiredSession(error.getMessage());
+            throw error;
+        }
     }
     private JSONObject get(String path) throws Exception { return (JSONObject) api(path, "GET", null, null); }
     private String money(double value, String code) throws Exception {
@@ -159,7 +137,7 @@ public final class MainActivity extends Activity {
         return LocalDate.parse(iso).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT).withLocale(locale()));
     }
     private void login() {
-        page = "login"; screen(t("personal_space"));
+        page = "login"; CounterWidget.render(this); screen(t("personal_space"));
         EditText address = input(t("server_address"), server.isEmpty() ? "https://" : server, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         EditText username = input(t("username"), "", InputType.TYPE_CLASS_TEXT);
         EditText password = input(t("password"), "", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -208,6 +186,7 @@ public final class MainActivity extends Activity {
         }, value -> {
             JSONObject bundle = (JSONObject)value, stats = bundle.getJSONObject("stats"), today = stats.getJSONObject("today"), period = stats.getJSONObject("period"), total = stats.getJSONObject("total");
             setLanguage(bundle.getJSONObject("settings").getString("language"));
+            CounterWidget.acceptStats(this, server, token, stats);
             screen(t("tagline")); button(t("refresh"), this::dashboard);
             // Currency names and precision come from the same catalog as the web app.
             if (catalog == null) { catalog = new JSONObject(); catalog.put("currencies", new JSONArray()); }
@@ -222,6 +201,11 @@ public final class MainActivity extends Activity {
             button(t("past_entry"), this::entryForm);
             button(t("history_daily"), this::history);
             button(t("settings"), this::settings);
+            button(t("widget_add_home"), () -> {
+                android.appwidget.AppWidgetManager manager=android.appwidget.AppWidgetManager.getInstance(this);
+                if(manager.isRequestPinAppWidgetSupported())manager.requestPinAppWidget(new android.content.ComponentName(this,CounterWidget.class),null,null);
+                else Toast.makeText(this,t("widget_pin_help"),Toast.LENGTH_LONG).show();
+            });
 
             button(t("logout"), () -> perform(() -> api("/auth/logout", "POST", null, null), unused -> { token = ""; pendingKey = null; pendingPayload = null; TokenStore.clear(this); login(); }));
         });

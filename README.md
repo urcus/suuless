@@ -6,13 +6,23 @@ Suivi de consommation de cigarettes **multi-utilisateur**, en anglais par défau
 
 - Comptes indépendants, connexion et clés API personnelles révocables.
 - Bouton **+1 cigarette**, ajout de plusieurs cigarettes, saisie rétroactive et suppression d’une erreur.
-- Total du jour, total global, coûts, moyenne quotidienne, graphique et historique par période.
+- Total du jour et total global, coûts jour par jour, moyennes, écarts quotidiens et comparaison avec la période précédente.
+- Graphique web de consommation ou de coût, avec repère de moyenne et sélection de devise.
+- Widget Android horizontal : compteur du jour et bouton **+1** sur l’écran d’accueil.
 - Prix du paquet, devise, langue, nombre de cigarettes, repère quotidien et fuseau horaire propres à chaque compte.
 - Catalogue de devises (EUR, USD, JPY, CAD, GBP, etc.) et sélecteur géographique IANA avec recherche par ville, pays ou identifiant, sur le web et Android.
 - Coût enregistré au moment de la saisie : une modification du prix ne réécrit pas l’historique.
 - Export CSV sur la période choisie et persistance SQLite dans un volume Docker.
 
 La devise initiale est l’euro et peut être changée dans les réglages. Les statistiques décrivent les **saisies**, pas une mesure automatique de la consommation. Un jour sans saisie n’est pas nécessairement un jour sans tabac. Les saisies rétroactives utilisent le tarif actuel. La moyenne inclut tous les jours de la période, y compris ceux sans saisie ; le jour courant est partiel.
+
+## Analyses web
+
+Le filtre de dates pilote le graphique, les moyennes et le tableau quotidien. Le sélecteur du graphique permet de passer des cigarettes aux dépenses ; les devises restent séparées, sans conversion. La ligne pointillée indique la moyenne quotidienne de la période.
+
+Chaque journée affiche la consommation, le coût et leur écart à la moyenne, en valeur et en pourcentage. La synthèse compare les totaux à ceux de la période immédiatement précédente, de même nombre de jours calendaires dans le fuseau du compte. Par exemple, du 8 au 14 est comparé au 1 au 7. Les journées sans saisie comptent pour zéro dans les moyennes. Le jour courant reste inclus et est signalé comme incomplet. Un pourcentage sans référence non nulle est affiché « — » ; les différences absolues restent disponibles. Les périodes qui précèdent la limite de saisie du 1er janvier 2000 ne sont pas comparées.
+
+Les coûts utilisent le tarif historique de chaque saisie. Les calculs précèdent l’arrondi monétaire d’affichage ; des écarts minimes peuvent donc apparaître lorsqu’on additionne des montants affichés déjà arrondis.
 
 ## Démarrer avec Docker
 
@@ -82,7 +92,17 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Renseigner l’origine du serveur (par exemple `https://tabac.exemple.fr`), sans chemin, puis se connecter au même compte que sur le web. Les sessions Android sont chiffrées avec Android Keystore ; les sauvegardes Android de l’application sont désactivées.
 
-La connexion réseau est nécessaire : aucune file hors ligne ni synchronisation en arrière-plan. En cas de réponse réseau incertaine, réessayer la saisie non confirmée pour réutiliser sa clé d’idempotence. Une version de distribution doit être signée avec votre propre clé ; aucune clé de release n’est enregistrée dans le dépôt.
+La connexion réseau est nécessaire. En cas de réponse réseau incertaine, réessayer la saisie non confirmée pour réutiliser sa clé d’idempotence. Une version de distribution doit être signée avec votre propre clé ; aucune clé de release n’est enregistrée dans le dépôt.
+
+### Widget sur l’écran d’accueil
+
+Après connexion, toucher **Add home screen widget** (**Ajouter le widget à l’écran d’accueil**) dans l’application, ou ouvrir le catalogue de widgets du lanceur Android et sélectionner Stop Clop. Le widget occupe une ligne (4 × 1 cellules par défaut), redimensionnable horizontalement.
+
+- **+1** ajoute une cigarette au compte connecté et recharge le compteur du jour dans le fuseau du compte.
+- Toucher le compteur le rafraîchit ; le bouton à gauche ouvre l’application.
+- Le compteur est aussi rechargé à l’ouverture du tableau de bord et périodiquement, environ toutes les 30 minutes selon les restrictions Android. Ce n’est pas un compteur temps réel entre appareils ; l’heure de dernière mise à jour est affichée dans le fuseau du téléphone.
+- Hors connexion ou après une réponse incertaine, **Réessayer +1** conserve une seule saisie en attente avec son instant initial et sa clé d’idempotence. Réessayer après reconnexion évite un doublon même si le serveur avait déjà enregistré l’ajout. Ce bouton ne cumule pas plusieurs cigarettes hors ligne.
+- Le widget utilise la session chiffrée de l’application. Une déconnexion ou un changement de compte efface son cache et sa saisie en attente ; les anciennes données ne sont pas affichées au compte suivant. Une session expirée demande de se reconnecter.
 
 ## Stream Deck : une cigarette par pression
 
@@ -135,6 +155,8 @@ Réglages : `{"pack_price":"600","currency":"JPY","language":"ja","pack_size":20
 L’ancien champ `pack_price_cents` est conservé pour compatibilité et représente toujours des centièmes de l’unité monétaire ; il ne convient pas aux devises à trois décimales. Les nouveaux clients utilisent exclusivement `pack_price`. Le repère quotidien n’empêche pas une saisie au-delà du seuil.
 
 Ajout : `{"quantity":1,"occurred_at":"2026-01-10T14:30:00+01:00","source":"android"}`. Tous les champs sont optionnels. Quantité : entier 1–200 ; source : `web`, `android`, `api` ou `streamdeck` (indicative, pas une preuve d’origine). Les dates futures et antérieures à 2000 sont refusées. Sans date, l’heure serveur est utilisée. Une date `occurred_at` explicite doit comporter son décalage UTC. Les interfaces web et Android envoient `occurred_at_local` sans décalage : le serveur l’interprète dans le fuseau du compte. Ces champs sont mutuellement exclusifs. Une heure locale inexistante au changement d’heure est refusée ; une heure répétée utilise la première occurrence. Les réponses d’historique incluent aussi `local_datetime` avec le décalage calculé par le serveur.
+
+`GET /api/stats` conserve ses champs existants et ajoute `analysis` : `average_quantity_per_day`, `average_cost_per_day` (par devise), `days_with_entries`, `minimum_quantity`, `maximum_quantity`, `includes_today`, `previous_period`, `comparison` et `daily`. Les comparaisons contiennent `quantity_delta`, `quantity_percent`, `cost_deltas` et `cost_percent` (dictionnaires par devise). Dans `daily`, ces écarts se rapportent à la moyenne de la période ; dans `comparison`, ils comparent les totaux à la période précédente. Un pourcentage dont la référence vaut zéro est `null`. Si la période précédente sort des dates prises en charge, ses bornes et les écarts de quantité sont `null`, `days` vaut zéro et les dictionnaires d’écarts monétaires sont vides.
 
 `/api/stats`, `/api/cigarettes` et `/api/export.csv` acceptent `?start=2026-01-01&end=2026-01-31`, bornes incluses dans le fuseau du compte. La période par défaut est de 30 jours jusqu’à aujourd’hui ; maximum 366 jours, sans jour futur. Le total global et le total du jour sont indépendants de ce filtre. L’historique accepte aussi `limit` (1–500, défaut 100) et `offset` (défaut 0), et retourne `{items,total}`.
 

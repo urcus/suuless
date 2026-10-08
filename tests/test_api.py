@@ -124,6 +124,21 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(self.client.get('/api/stats?'+query,headers=self.auth).status_code,400)
         self.assertEqual(self.client.post('/api/cigarettes',json=[],headers=self.auth).status_code,400)
 
+    def test_analysis_previous_period_and_user_isolation(self):
+        self.settings(timezone='Asia/Tokyo')
+        self.add({'quantity':4,'occurred_at':'2025-01-01T00:00:00+09:00'})
+        self.add({'quantity':2,'occurred_at':'2025-01-03T00:00:00+09:00'})
+        result=self.stats('?start=2025-01-03&end=2025-01-04')['analysis']
+        self.assertEqual(result['average_quantity_per_day'],1)
+        self.assertEqual(result['average_cost_per_day'],{'EUR':.6})
+        self.assertEqual(result['previous_period']['quantity'],4)
+        self.assertEqual(result['previous_period']['start'],'2025-01-01')
+        self.assertEqual(result['comparison']['quantity_percent'],-50)
+        self.assertEqual(result['daily'][1]['quantity_delta'],-1)
+        other=self.register('analysis-other')
+        self.assertEqual(self.stats('?start=2025-01-03&end=2025-01-04',headers=other)['analysis']['previous_period']['quantity'],0)
+        self.assertIsNone(self.stats('?start=2000-01-01&end=2000-01-02')['analysis']['comparison']['quantity_delta'])
+
     def test_delete_pagination_csv(self):
         for _ in range(3): self.add()
         page=self.client.get('/api/cigarettes?limit=2&offset=1', headers=self.auth).json

@@ -1,0 +1,31 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+const base=process.env.BASE_URL||'http://127.0.0.1:8080';
+const browser=await chromium.launch({headless:true}),context=await browser.newContext(),page=await context.newPage();
+const errors=[];page.on('pageerror',error=>errors.push(error.message));
+try{
+  const auth=await(await context.request.post(base+'/api/auth/register',{data:{username:`analysis-${Date.now()}`,password:'analysis-test-password',timezone:'UTC'}})).json();
+  const headers={Authorization:`Bearer ${auth.token}`};
+  for(const [quantity,day] of [[8,'01'],[2,'03'],[4,'04']])assert.equal((await context.request.post(base+'/api/cigarettes',{headers,data:{quantity,occurred_at:`2025-01-${day}T12:00:00Z`}})).status(),201);
+  await page.goto(base);await page.evaluate(token=>sessionStorage.setItem('stop-clop-token',token),auth.token);await page.reload();
+  await page.waitForFunction(()=>document.querySelector('#today-count').textContent==='0');
+  await page.locator('#start-date').fill('2025-01-03');await page.locator('#end-date').fill('2025-01-04');
+  await page.locator('#range-form button').click();await page.waitForFunction(()=>document.querySelector('#analysis-average-quantity').textContent==='3');
+  assert.match(await page.locator('#analysis-average-cost').textContent(),/1\.80/);
+  assert.match(await page.locator('#analysis-comparison').textContent(),/-2.*-25%/);
+  assert.match(await page.locator('#daily-table').textContent(),/-1.*-33\.33%/);
+  await page.locator('#chart-measure').selectOption('cost');
+  assert.equal(await page.locator('#chart-currency').inputValue(),'EUR');
+  assert.equal(await page.locator('.mean-tick').count(),2);
+  assert.equal(await page.locator('#analysis-today').isVisible(),false);
+  await context.request.put(base+'/api/settings',{headers,data:{currency:'JPY',pack_price:'600'}});
+  await context.request.post(base+'/api/cigarettes',{headers,data:{quantity:1,occurred_at:'2025-01-04T13:00:00Z'}});
+  await page.locator('#refresh').click();await page.waitForFunction(()=>document.querySelector('#analysis-average-cost').textContent.includes('JPY'));
+  await page.locator('#chart-currency').selectOption('JPY');assert.match(await page.locator('#chart .bar-column').last().getAttribute('title'),/30/);
+  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:'test-results/analysis-mobile.png',fullPage:true});
+  await page.locator('#start-date').fill('2024-01-01');await page.locator('#end-date').fill('2024-01-02');await page.locator('#range-form button').click();
+  await page.waitForFunction(()=>document.querySelector('#analysis-average-quantity').textContent==='0');
+  assert.ok(!(await page.locator('.analysis').textContent()).match(/NaN|Infinity/));assert.deepEqual(errors,[]);
+  console.log('Web analysis OK: daily deltas, previous period, historical costs, mixed currencies, zero baseline and mobile layout.');
+}finally{await browser.close();}
