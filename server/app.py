@@ -1,0 +1,438 @@
+"""Stop Clop: one SQLite database, strictly user-scoped resources."""
+from contextlib import closing
+import csv
+import hashlib
+import io
+import os
+import re
+import secrets
+import sqlite3
+from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
+from babel.numbers import get_currency_precision
+from pathlib import Path
+from .timezones import (VALID_TIMEZONES, ALIASES, TZDATA_VERSION, get_zone,
+                        canonical_timezone, timezone_catalog, timezone_info)
+
+from flask import Flask, g, jsonify, request, send_from_directory
+from werkzeug.exceptions import HTTPException
+from werkzeug.security import check_password_hash, generate_password_hash
+
+from .international import (LANGUAGES, CURRENCIES, TIMEZONES, language, translate,
+                            currency_catalog, price_micros, price_string, money, cost_summary)
+
+UTC = timezone.utc
+SCHEMA = """
+PRAGMA journal_mode=WAL;
+CREATE TABLE IF NOT EXISTS users (
+ id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
+ pack_price_cents INTEGER NOT NULL DEFAULT 1200, pack_size INTEGER NOT NULL DEFAULT 20,
+ timezone TEXT NOT NULL DEFAULT 'Europe/Paris', daily_target INTEGER NOT NULL DEFAULT 10
+);
+CREATE TABLE IF NOT EXISTS tokens (
+ id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+ digest TEXT UNIQUE NOT NULL, name TEXT NOT NULL, expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cigarettes (
+ id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+ occurred_at TEXT NOT NULL, quantity INTEGER NOT NULL,
+ unit_cost_micros INTEGER NOT NULL, source TEXT NOT NULL,
+ idempotency_key TEXT, UNIQUE(user_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS cigarettes_user_date ON cigarettes(user_id, occurred_at);
+CREATE TABLE IF NOT EXISTS auth_attempts (address TEXT NOT NULL, attempted_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS auth_attempts_date ON auth_attempts(attempted_at);
+"""
+
+
+def now():
+    return datetime.now(UTC)
+
+
+def stamp(dt):
+    return dt.astimezone(UTC).isoformat(timespec='microseconds')
+
+
+def fail(code, status=400, *args):
+    from flask import abort
+    g.error_code = code
+    abort(status, description=translate(code, *args))
+
+
+def integer(value, low, high, label):
+    if type(value) is not int or not low <= value <= high:
+        fail('invalid_integer', 400, translate(label), low, high)
+    return value
+
+
+def body():
+    data = request.get_json()
+    if not isinstance(data, dict):
+        fail('json_object')
+    return data
+
+
+def create_app(config=None):
+    app = Flask(__name__, static_folder='static', static_url_path='/static')
+    app.config.update(DATABASE=os.environ.get('DATABASE', 'data/stopclop.db'),
+                      ALLOW_REGISTRATION=os.environ.get('ALLOW_REGISTRATION', 'true').lower() == 'true',
+                      MAX_CONTENT_LENGTH=16 * 1024)
+    if config:
+        app.config.update(config)
+    Path(app.config['DATABASE']).parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(app.config['DATABASE'])) as conn:
+        conn.executescript(SCHEMA)
+        # Serialize additive migrations across Gunicorn workers; preserve existing EUR data.
+        conn.execute('BEGIN IMMEDIATE')
+        try:
+            columns = {row[1] for row in conn.execute('PRAGMA table_info(users)')}
+            for column, definition in [('language', "TEXT NOT NULL DEFAULT 'en'"),
+                                       ('currency', "TEXT NOT NULL DEFAULT 'EUR'"),
+                                       ('pack_price_micros', 'INTEGER NOT NULL DEFAULT 12000000')]:
+                if column not in columns:
+                    conn.execute(f'ALTER TABLE users ADD COLUMN {column} {definition}')
+                    if column == 'pack_price_micros':
+                        conn.execute('UPDATE users SET pack_price_micros=pack_price_cents*10000')
+            columns = {row[1] for row in conn.execute('PRAGMA table_info(cigarettes)')}
+            if 'currency' not in columns:
+                conn.execute("ALTER TABLE cigarettes ADD COLUMN currency TEXT NOT NULL DEFAULT 'EUR'")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+
+    def db():
+        if 'db' not in g:
+            g.db = sqlite3.connect(app.config['DATABASE'], timeout=15)
+            g.db.row_factory = sqlite3.Row
+            g.db.execute('PRAGMA foreign_keys=ON')
+        return g.db
+
+    @app.teardown_appcontext
+    def close_db(_error):
+        if 'db' in g:
+            g.db.close()
+
+    @app.errorhandler(HTTPException)
+    def error(exc):
+        code = getattr(g, 'error_code', None)
+        if code is None:
+            code = {404: 'not_found', 413: 'payload_too_large', 415: 'json_required'}.get(exc.code, 'request_error')
+            return jsonify(error=translate(code), code=code), exc.code
+        return jsonify(error=exc.description, code=code), exc.code
+
+    @app.after_request
+    def headers(response):
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        if request.path.startswith('/api/'):
+            response.headers['Cache-Control'] = 'no-store'
+        return response
+
+    @app.before_request
+    def authenticate():
+        if not request.path.startswith('/api/') or request.path in ('/api/auth/login', '/api/auth/register', '/api/config'):
+            return
+        auth = request.headers.get('Authorization', '')
+        if not auth.startswith('Bearer '):
+            fail('auth_required', 401)
+        digest = hashlib.sha256(auth[7:].encode()).hexdigest()
+        token = db().execute('SELECT * FROM tokens WHERE digest=? AND expires_at>?', (digest, stamp(now()))).fetchone()
+        if token is None:
+            fail('invalid_token', 401)
+        g.token = token
+        g.user = db().execute('SELECT * FROM users WHERE id=?', (token['user_id'],)).fetchone()
+
+    def issue_token(user_id, name, days):
+        secret = secrets.token_urlsafe(32)
+        expiry = stamp(now() + timedelta(days=days))
+        cursor = db().execute('INSERT INTO tokens(user_id,digest,name,expires_at) VALUES(?,?,?,?)',
+                              (user_id, hashlib.sha256(secret.encode()).hexdigest(), name, expiry))
+        return dict(token=secret, id=cursor.lastrowid, expires_at=expiry)
+
+    def auth_limit():
+        cutoff = stamp(now() - timedelta(minutes=15))
+        with db():
+            db().execute('DELETE FROM auth_attempts WHERE attempted_at<?', (cutoff,))
+            count = db().execute('SELECT COUNT(*) FROM auth_attempts WHERE address=?', (request.remote_addr,)).fetchone()[0]
+            if count >= 30:
+                fail('rate_limit', 429)
+            db().execute('INSERT INTO auth_attempts VALUES(?,?)', (request.remote_addr, stamp(now())))
+
+    @app.get('/')
+    def index():
+        return send_from_directory(app.static_folder, 'index.html')
+
+    @app.get('/healthz')
+    def health():
+        db().execute('SELECT 1 FROM users LIMIT 1')
+        return jsonify(status='ok')
+
+    @app.get('/api/config')
+    def public_config():
+        instant = now()
+        return jsonify(registration_enabled=app.config['ALLOW_REGISTRATION'],
+                       languages=[dict(code=code, name=name) for code, name in LANGUAGES.items()],
+                       currencies=currency_catalog(language()), timezones=TIMEZONES,
+                       timezone_options=timezone_catalog(language(), instant), timezone_aliases=ALIASES,
+                       timezone_offsets_at=stamp(instant), tzdata_version=TZDATA_VERSION)
+
+    @app.post('/api/auth/register')
+    def register():
+        if not app.config['ALLOW_REGISTRATION']:
+            fail('registration_closed', 403)
+        auth_limit()
+        data = body()
+        username = data.get('username', '')
+        password = data.get('password', '')
+        if not isinstance(username, str) or not re.fullmatch(r'[a-zA-Z0-9_.-]{3,40}', username):
+            fail('invalid_username')
+        if not isinstance(password, str) or not 12 <= len(password) <= 256:
+            fail('invalid_password')
+        locale = data.get('language', 'en')
+        if not isinstance(locale, str) or locale not in LANGUAGES:
+            fail('invalid_language')
+        tz = data.get('timezone', 'Europe/Paris')
+        if not isinstance(tz, str) or tz not in VALID_TIMEZONES:
+            fail('invalid_timezone')
+        # New accounts may normalize browser aliases; existing accounts never auto-change.
+        tz = canonical_timezone(tz) or tz
+        try:
+            with db():
+                cursor = db().execute('INSERT INTO users(username,password_hash,language,timezone) VALUES(?,?,?,?)',
+                                      (username.lower(), generate_password_hash(password), locale, tz))
+                result = issue_token(cursor.lastrowid, 'Session', 30)
+        except sqlite3.IntegrityError:
+            fail('username_taken', 409)
+        return jsonify(result), 201
+
+    @app.post('/api/auth/login')
+    def login():
+        auth_limit()
+        data = body()
+        username, password = data.get('username', ''), data.get('password', '')
+        if not isinstance(username, str) or not isinstance(password, str) or len(password) > 256:
+            fail('invalid_credentials', 401)
+        user = db().execute('SELECT * FROM users WHERE username=?', (username.lower(),)).fetchone()
+        # Always perform the expensive password operation, including unknown accounts.
+        valid = check_password_hash(user['password_hash'], password) if user else check_password_hash(app.config['DUMMY_HASH'], password)
+        if not user or not valid:
+            fail('invalid_credentials', 401)
+        with db():
+            db().execute('DELETE FROM tokens WHERE expires_at<?', (stamp(now()),))
+            result = issue_token(user['id'], 'Session', 30)
+        return jsonify(result)
+
+    app.config['DUMMY_HASH'] = generate_password_hash(secrets.token_urlsafe(32))
+
+    @app.post('/api/auth/logout')
+    def logout():
+        with db():
+            db().execute('DELETE FROM tokens WHERE id=?', (g.token['id'],))
+        return '', 204
+
+    @app.get('/api/me')
+    def me():
+        return jsonify(id=g.user['id'], username=g.user['username'])
+
+    @app.get('/api/tokens')
+    def tokens():
+        rows = db().execute('SELECT id,name,expires_at FROM tokens WHERE user_id=? ORDER BY id DESC', (g.user['id'],))
+        return jsonify([dict(row, current=row['id'] == g.token['id']) for row in rows])
+
+    @app.post('/api/tokens')
+    def new_token():
+        data = body()
+        name = data.get('name', 'Stream Deck')
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 60:
+            fail('invalid_key_name')
+        with db():
+            result = issue_token(g.user['id'], name.strip(), 365)
+        return jsonify(result), 201
+
+    @app.delete('/api/tokens/<int:token_id>')
+    def revoke_token(token_id):
+        with db():
+            deleted = db().execute('DELETE FROM tokens WHERE id=? AND user_id=?', (token_id, g.user['id'])).rowcount
+        if not deleted:
+            fail('key_not_found', 404)
+        return '', 204
+
+    @app.route('/api/settings', methods=['GET', 'PUT'])
+    def settings():
+        if request.method == 'PUT':
+            data = body()
+            currency = data.get('currency', g.user['currency'])
+            locale = data.get('language', g.user['language'])
+            if not isinstance(currency, str) or currency not in CURRENCIES:
+                fail('invalid_currency')
+            if not isinstance(locale, str) or locale not in LANGUAGES:
+                fail('invalid_language')
+            if currency != g.user['currency'] and 'pack_price' not in data:
+                fail('price_required')
+            if 'pack_price' in data:
+                value = data['pack_price']
+            elif 'pack_price_cents' in data:
+                cents = integer(data['pack_price_cents'], 0, 100000000, 'pack_price')
+                value = str(Decimal(cents) / 100)
+            else:
+                value = price_string(g.user['pack_price_micros'], currency)
+            try:
+                price = price_micros(value, currency)
+            except ValueError:
+                fail('invalid_price', 400, get_currency_precision(currency), currency)
+            size = integer(data.get('pack_size', g.user['pack_size']), 1, 1000, 'pack_size')
+            target = integer(data.get('daily_target', g.user['daily_target']), 0, 200, 'daily_target')
+            tz = data.get('timezone', g.user['timezone'])
+            if not isinstance(tz, str) or tz not in VALID_TIMEZONES:
+                fail('invalid_timezone')
+            with db():
+                db().execute('UPDATE users SET pack_price_cents=?,pack_price_micros=?,pack_size=?,daily_target=?,timezone=?,currency=?,language=? WHERE id=?',
+                             (int((Decimal(price) / 10000).quantize(Decimal('1'), rounding=ROUND_HALF_UP)),
+                              price, size, target, tz, currency, locale, g.user['id']))
+            g.user = db().execute('SELECT * FROM users WHERE id=?', (g.user['id'],)).fetchone()
+        instant = now()
+        return jsonify({**{key: g.user[key] for key in ('pack_price_cents', 'pack_size', 'daily_target', 'timezone', 'currency', 'language')},
+                        'pack_price': price_string(g.user['pack_price_micros'], g.user['currency']),
+                        'timezone_info': timezone_info(g.user['timezone'], g.user['language'], instant),
+                        'local_today': instant.astimezone(get_zone(g.user['timezone'])).date().isoformat(),
+                        'local_datetime': instant.astimezone(get_zone(g.user['timezone'])).isoformat()})
+
+    def period():
+        tz = get_zone(g.user['timezone'])
+        today = now().astimezone(tz).date()
+        try:
+            end = date.fromisoformat(request.args.get('end', today.isoformat()))
+            if end.year < 2000:
+                raise ValueError()
+            start = date.fromisoformat(request.args.get('start', (end - timedelta(days=29)).isoformat()))
+        except ValueError:
+            fail('invalid_dates')
+        if start.year < 2000 or not 0 <= (end - start).days <= 365 or end > today:
+            fail('invalid_period')
+        return tz, today, start, end
+
+    def bounds(start, end, tz):
+        return stamp(datetime.combine(start, time.min, tz)), stamp(datetime.combine(end + timedelta(days=1), time.min, tz))
+
+    def entries(start, end, tz):
+        low, high = bounds(start, end, tz)
+        return db().execute('SELECT * FROM cigarettes WHERE user_id=? AND occurred_at>=? AND occurred_at<? ORDER BY occurred_at DESC,id DESC',
+                            (g.user['id'], low, high)).fetchall()
+
+    def serialize(row):
+        return dict(id=row['id'], occurred_at=row['occurred_at'],
+                    local_datetime=datetime.fromisoformat(row['occurred_at']).astimezone(get_zone(g.user['timezone'])).isoformat(), quantity=row['quantity'],
+                    cost=money(row['quantity'] * row['unit_cost_micros'], row['currency']), currency=row['currency'], source=row['source'])
+
+    @app.post('/api/cigarettes')
+    def add():
+        data = body() if request.data else {}
+        quantity = integer(data.get('quantity', 1), 1, 200, 'quantity')
+        source = data.get('source', 'api')
+        if source not in ('web', 'android', 'api', 'streamdeck'):
+            fail('invalid_source')
+        occurred = now()
+        if 'occurred_at_local' in data:
+            if 'occurred_at' in data:
+                fail('invalid_timestamp')
+            try:
+                local = datetime.fromisoformat(data['occurred_at_local'])
+                if local.tzinfo is not None:
+                    raise ValueError()
+                tz = get_zone(g.user['timezone'])
+                zoned = local.replace(tzinfo=tz, fold=0)
+                occurred = zoned.astimezone(UTC)
+                # Reject nonexistent wall times during spring DST transitions.
+                if occurred.astimezone(tz).replace(tzinfo=None) != local:
+                    raise ValueError()
+            except (TypeError, ValueError, OverflowError):
+                fail('invalid_timestamp')
+        if 'occurred_at' in data:
+            try:
+                occurred = datetime.fromisoformat(data['occurred_at'].replace('Z', '+00:00'))
+                if occurred.tzinfo is None:
+                    raise ValueError()
+                occurred = occurred.astimezone(UTC)
+            except (AttributeError, TypeError, ValueError, OverflowError):
+                fail('invalid_timestamp')
+        if occurred > now() or occurred.year < 2000:
+            fail('invalid_entry_date')
+        key = request.headers.get('Idempotency-Key')
+        if key is not None and not re.fullmatch(r'[A-Za-z0-9_.:-]{1,100}', key):
+            fail('invalid_idempotency')
+        unit = int((Decimal(g.user['pack_price_micros']) / g.user['pack_size']).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        with db():
+            if key:
+                previous = db().execute('SELECT * FROM cigarettes WHERE user_id=? AND idempotency_key=?', (g.user['id'], key)).fetchone()
+                if previous:
+                    return jsonify(serialize(previous)), 200
+            try:
+                cursor = db().execute('INSERT INTO cigarettes(user_id,occurred_at,quantity,unit_cost_micros,source,idempotency_key,currency) VALUES(?,?,?,?,?,?,?)',
+                                      (g.user['id'], stamp(occurred), quantity, unit, source, key, g.user['currency']))
+            except sqlite3.IntegrityError:
+                previous = db().execute('SELECT * FROM cigarettes WHERE user_id=? AND idempotency_key=?', (g.user['id'], key)).fetchone()
+                return jsonify(serialize(previous)), 200
+            row = db().execute('SELECT * FROM cigarettes WHERE id=?', (cursor.lastrowid,)).fetchone()
+        return jsonify(serialize(row)), 201
+
+    @app.get('/api/cigarettes')
+    def history():
+        tz, _, start, end = period()
+        try:
+            limit = integer(int(request.args.get('limit', 100)), 1, 500, 'limit')
+            offset = integer(int(request.args.get('offset', 0)), 0, 10000000, 'offset')
+        except ValueError:
+            fail('invalid_pagination')
+        rows = entries(start, end, tz)
+        return jsonify(items=[serialize(row) for row in rows[offset:offset + limit]], total=len(rows))
+
+    @app.delete('/api/cigarettes/<int:entry_id>')
+    def remove(entry_id):
+        with db():
+            deleted = db().execute('DELETE FROM cigarettes WHERE id=? AND user_id=?', (entry_id, g.user['id'])).rowcount
+        if not deleted:
+            fail('entry_not_found', 404)
+        return '', 204
+
+    @app.get('/api/stats')
+    def stats():
+        tz, today, start, end = period()
+        days = (end - start).days + 1
+        daily = {(start + timedelta(days=i)).isoformat(): {'quantity': 0, 'amounts': {}} for i in range(days)}
+        for row in entries(start, end, tz):
+            day = datetime.fromisoformat(row['occurred_at']).astimezone(tz).date().isoformat()
+            daily[day]['quantity'] += row['quantity']
+            amounts = daily[day]['amounts']
+            amounts[row['currency']] = amounts.get(row['currency'], 0) + row['quantity'] * row['unit_cost_micros']
+        low, high = bounds(today, today, tz)
+        def total(condition='', params=()):
+            rows = db().execute('SELECT currency,SUM(quantity) AS quantity,SUM(quantity*unit_cost_micros) AS amount FROM cigarettes WHERE user_id=? ' + condition + ' GROUP BY currency',
+                                (g.user['id'], *params)).fetchall()
+            return dict(quantity=sum(row['quantity'] for row in rows),
+                        **cost_summary({row['currency']: row['amount'] for row in rows}, g.user['currency']))
+        quantity = sum(day['quantity'] for day in daily.values())
+        period_amounts = {}
+        for day in daily.values():
+            for code, amount in day['amounts'].items():
+                period_amounts[code] = period_amounts.get(code, 0) + amount
+        return jsonify(start=start.isoformat(), end=end.isoformat(), timezone=g.user['timezone'],
+                       today=total('AND occurred_at>=? AND occurred_at<?', (low, high)), total=total(),
+                       period=dict(quantity=quantity, **cost_summary(period_amounts, g.user['currency']),
+                                   average_per_day=round(quantity / days, 2), days=days,
+                                   days_without_entries=sum(day['quantity'] == 0 for day in daily.values())),
+                       daily=[dict(date=d, quantity=v['quantity'], **cost_summary(v['amounts'], g.user['currency'])) for d, v in daily.items()])
+
+    @app.get('/api/export.csv')
+    def export():
+        tz, _, start, end = period()
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['id', 'local_datetime', 'quantity', 'cost', 'currency', 'source'])
+        for row in entries(start, end, tz):
+            writer.writerow([row['id'], datetime.fromisoformat(row['occurred_at']).astimezone(tz).isoformat(),
+                             row['quantity'], price_string(row['quantity'] * row['unit_cost_micros'], row['currency']), row['currency'], row['source']])
+        return app.response_class('\ufeff' + output.getvalue(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=stop-clop.csv'})
+
+    return app

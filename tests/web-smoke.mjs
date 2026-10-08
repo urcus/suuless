@@ -1,0 +1,66 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
+
+const base = process.env.BASE_URL || 'http://127.0.0.1:8080';
+const browser = await chromium.launch({headless:true});
+const context = await browser.newContext({viewport:{width:1440,height:1100}});
+const page = await context.newPage();
+const errors=[];
+page.on('pageerror',error=>errors.push(error.message));
+page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
+const account = `web-${Date.now()}`;
+async function waitForText(selector, text) {
+  await page.waitForFunction(({selector,text})=>document.querySelector(selector)?.textContent.includes(text), {selector,text});
+}
+try {
+  await page.goto(base);
+  assert.equal(await page.locator('html').getAttribute('lang'),'en');
+  await page.locator('#header-language').selectOption('fr');
+  await waitForText('#auth-submit','Se connecter');
+  await page.locator('#auth-switch').click();
+  await page.locator('[name=username]').fill(account);
+  await page.locator('[name=password]').fill('a-long-browser-test-password');
+  await page.locator('#auth-submit').click();
+  await page.locator('#dashboard').waitFor({state:'visible'});
+  await waitForText('#today-count','0');
+  await page.locator('#plus-one').click();
+  await waitForText('#today-count','1');
+  await waitForText('#period-cost','0,60');
+  await page.locator('.settings>summary').click();
+  await page.locator('#pack-price').fill('15');
+  await page.locator('#settings-form button').click();
+  await waitForText('#message','Réglages enregistrés');
+  await page.locator('#plus-one').click();
+  await waitForText('#today-count','2');
+  await waitForText('#period-cost','1,35');
+  await page.locator('#token-form button').click();
+  await page.locator('#new-token').waitFor({state:'visible'});
+  const token=await page.locator('#token-value').inputValue();
+  const headers={Authorization:`Bearer ${token}`,'Idempotency-Key':`web-streamdeck-${Date.now()}`};
+  const first=await context.request.post(`${base}/api/cigarettes`,{headers,data:{source:'streamdeck'}});
+  assert.equal(first.status(),201);
+  const retry=await context.request.post(`${base}/api/cigarettes`,{headers,data:{source:'streamdeck'}});
+  assert.equal(retry.status(),200);
+  await page.locator('#refresh').click();
+  await waitForText('#today-count','3');
+  await waitForText('#period-cost','2,10');
+  const downloadEvent=page.waitForEvent('download');await page.locator('#export').click();
+  assert.equal((await downloadEvent).suggestedFilename(),'stop-clop.csv');
+  await page.locator('.settings>summary').click();
+  const bars=await page.locator('.bar').evaluateAll(items=>items.some(item=>parseFloat(getComputedStyle(item).height)>10));
+  assert.ok(bars,'The consumption chart must render a visible bar');
+  await mkdir('test-results',{recursive:true});
+  await page.screenshot({path:'test-results/dashboard-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'No horizontal page overflow');
+  await page.screenshot({path:'test-results/dashboard-mobile.png',fullPage:true});
+  page.once('dialog',dialog=>dialog.accept());
+  await page.locator('#history button').first().click();
+  await waitForText('#today-count','2');
+  await page.locator('#logout').click();
+  await page.locator('#auth').waitFor({state:'visible'});
+  assert.equal(await page.evaluate(()=>sessionStorage.getItem('stop-clop-token')),null);
+  assert.deepEqual(errors,[]);
+  console.log('Web smoke OK: register, login state, +1, prices, token, Stream Deck retry, CSV, mobile, delete, logout.');
+} finally {await browser.close();}
