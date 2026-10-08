@@ -1,0 +1,209 @@
+image: node:24.11.0-bookworm-slim
+
+stages:
+  - validate
+  - build
+  - image
+  - sign
+  - release
+
+variables:
+  DOCKER_CONFIG: "/kaniko/.docker"
+  KANIKO_IMAGE: "gcr.io/kaniko-project/executor:v1.24.0-debug@sha256:2562c4fe551399514277ffff7dcca9a3b1628c4ea38cb017d7286dc6ea52f4cd"
+  NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.npm"
+  npm_config_audit: "false"
+  npm_config_fund: "false"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle"
+  ANDROID_HOME: "$CI_PROJECT_DIR/.android-sdk"
+  ANDROID_USER_HOME: "$CI_PROJECT_DIR/.android-user"
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+
+default:
+  tags:
+    - k8s
+  interruptible: true
+
+.release-tag:
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v[0-9]+\.[0-9]+\.[0-9]+$/ && $CI_COMMIT_REF_PROTECTED == "true"'
+
+quality:api:
+  stage: validate
+  image: python:3.13-slim-bookworm
+  cache:
+    key:
+      prefix: python-3.13
+      files: [requirements.txt]
+    paths: [.cache/pip/]
+  script:
+    - python --version
+    - pip install -r requirements.txt
+    - python -m unittest discover -s tests -v
+
+quality:web:
+  stage: validate
+  cache:
+    key:
+      prefix: node-24
+      files: [package-lock.json]
+    paths: [.npm/]
+  variables:
+    DATABASE: "$CI_PROJECT_DIR/test-results/ci.sqlite"
+    ALLOW_REGISTRATION: "true"
+    BASE_URL: "http://127.0.0.1:8080"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates
+    - python3 -m venv .venv
+    - .venv/bin/pip install -r requirements.txt
+    - node --version && npm --version
+    - npm ci --cache .npm --prefer-offline
+    - npx playwright install --with-deps chromium
+  script:
+    - node --check server/static/app.js
+    - bash scripts/ci/test-web.sh
+  artifacts:
+    when: always
+    paths:
+      - test-results/*.png
+      - test-results/server.log
+    expire_in: 1 week
+
+android:build:
+  stage: build
+  image: eclipse-temurin:17-jdk-jammy
+  needs: ["quality:api", "quality:web"]
+  cache:
+    key:
+      prefix: android-sdk36-gradle8.13
+      files:
+        - android/gradle/wrapper/gradle-wrapper.properties
+        - android/build.gradle
+    paths:
+      - .gradle/caches/
+      - .gradle/wrapper/
+      - .android-sdk/
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends curl unzip ca-certificates
+    - bash scripts/ci/install-android-sdk.sh
+  script:
+    - bash scripts/ci/build-android.sh
+  artifacts:
+    when: always
+    paths:
+      - dist/android/
+      - android/app/build/reports/lint-results-*.html
+      - android/app/build/reports/lint-results-*.txt
+    expire_in: 1 week
+
+image:publish:
+  extends: .release-tag
+  stage: image
+  interruptible: false
+  tags: [k8s, kaniko]
+  image:
+    name: "$KANIKO_IMAGE"
+    entrypoint: [""]
+  needs:
+    - job: android:build
+      artifacts: false
+  script:
+    - |
+      set -eu
+      : "${HARBOR_URL:?HARBOR_URL is required}"
+      : "${PROJECT:?PROJECT is required}"
+      : "${HARBOR_USER:?HARBOR_USER is required}"
+      : "${HARBOR_PASSWORD:?HARBOR_PASSWORD is required}"
+      IMAGE_REPOSITORY="${HARBOR_URL}/${PROJECT}/${CI_PROJECT_NAME}"
+      IMAGE_TAG="${CI_COMMIT_TAG#v}"
+      IMAGE_NAME="${IMAGE_REPOSITORY}:${IMAGE_TAG}"
+      umask 077
+      mkdir -p "${DOCKER_CONFIG}"
+      AUTH="$(printf '%s:%s' "${HARBOR_USER}" "${HARBOR_PASSWORD}" | base64 | tr -d '\n')"
+      printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${HARBOR_URL}" "${AUTH}" > "${DOCKER_CONFIG}/config.json"
+      trap 'rm -f "${DOCKER_CONFIG}/config.json"' EXIT
+      /kaniko/executor \
+        --context "${CI_PROJECT_DIR}" \
+        --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
+        --destination "${IMAGE_NAME}" \
+        --cache=true \
+        --cache-copy-layers=true \
+        --cache-run-layers=true \
+        --cache-repo "${IMAGE_REPOSITORY}-cache" \
+        --cache-ttl=168h \
+        --snapshot-mode=redo \
+        --digest-file="${CI_PROJECT_DIR}/digest.txt"
+      IMAGE_DIGEST="$(cat "${CI_PROJECT_DIR}/digest.txt")"
+      printf '%s\n' "${IMAGE_DIGEST}" | grep -Eq '^sha256:[a-f0-9]{64}$'
+      {
+        echo "STOP_CLOP_IMAGE_NAME=${IMAGE_NAME}"
+        echo "STOP_CLOP_IMAGE_DIGEST=${IMAGE_DIGEST}"
+        echo "STOP_CLOP_IMAGE_REF=${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+      } > image.env
+  artifacts:
+    reports:
+      dotenv: image.env
+    paths: [image.env]
+    expire_in: 1 week
+
+image:sign:
+  extends: .release-tag
+  stage: sign
+  interruptible: false
+  tags: [k8s, kaniko]
+  image:
+    name: "$KANIKO_COSIGN_IMAGE"
+    entrypoint: [""]
+  needs:
+    - job: image:publish
+      artifacts: true
+  script:
+    - |
+      set -eu
+      : "${HARBOR_URL:?HARBOR_URL is required}"
+      : "${HARBOR_USER:?HARBOR_USER is required}"
+      : "${HARBOR_PASSWORD:?HARBOR_PASSWORD is required}"
+      : "${COSIGN_PRIVATE_KEY:?COSIGN_PRIVATE_KEY is required}"
+      : "${COSIGN_PASSWORD:?COSIGN_PASSWORD is required}"
+      : "${STOP_CLOP_IMAGE_REF:?STOP_CLOP_IMAGE_REF is required}"
+      umask 077
+      mkdir -p "${DOCKER_CONFIG}"
+      AUTH="$(printf '%s:%s' "${HARBOR_USER}" "${HARBOR_PASSWORD}" | base64 | tr -d '\n')"
+      printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${HARBOR_URL}" "${AUTH}" > "${DOCKER_CONFIG}/config.json"
+      trap 'rm -f "${DOCKER_CONFIG}/config.json"' EXIT
+      if [ -f "${COSIGN_PRIVATE_KEY}" ]; then
+        COSIGN_KEY_REFERENCE="${COSIGN_PRIVATE_KEY}"
+      else
+        COSIGN_KEY="${COSIGN_PRIVATE_KEY}"
+        export COSIGN_KEY
+        COSIGN_KEY_REFERENCE="env://COSIGN_KEY"
+      fi
+      cosign sign --key "${COSIGN_KEY_REFERENCE}" -y "${STOP_CLOP_IMAGE_REF}"
+      cosign public-key --key "${COSIGN_KEY_REFERENCE}" > cosign.pub
+      cosign verify --key cosign.pub "${STOP_CLOP_IMAGE_REF}" > signature-verification.json
+  artifacts:
+    paths: [cosign.pub, signature-verification.json]
+    expire_in: 1 week
+
+release:publish:
+  extends: .release-tag
+  stage: release
+  image: python:3.13-slim-bookworm
+  interruptible: false
+  resource_group: "release-$CI_COMMIT_TAG"
+  needs:
+    - job: android:build
+      artifacts: true
+    - job: image:publish
+      artifacts: true
+    - job: image:sign
+      artifacts: true
+  script:
+    - python scripts/ci/publish_release.py

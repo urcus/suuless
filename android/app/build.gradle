@@ -1,0 +1,39 @@
+plugins { id 'com.android.application' }
+
+def appVersionCode = providers.gradleProperty('appVersionCode').getOrElse('1').toInteger()
+if (appVersionCode < 1 || appVersionCode > 2100000000) {
+    throw new GradleException('appVersionCode must be between 1 and 2100000000')
+}
+def appVersionName = providers.gradleProperty('appVersionName').getOrElse('0.1.0')
+
+android {
+    namespace 'eu.cormerais.stopclop'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'eu.cormerais.stopclop'
+        minSdk 26
+        targetSdk 35
+        versionCode appVersionCode
+        versionName appVersionName
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        debug { manifestPlaceholders = [cleartextAllowed: 'true'] }
+        release {
+            manifestPlaceholders = [cleartextAllowed: 'false']
+            minifyEnabled false
+        }
+    }
+}
+
+// Keep Android and web translations in one reviewed source of truth.
+def localeAssets = layout.buildDirectory.dir('generated/localeAssets')
+tasks.register('syncLocales', Sync) {
+    from('../../server/static/locales')
+    into(localeAssets.map { it.dir('locales') })
+}
+android.sourceSets.main.assets.srcDir(localeAssets)
+tasks.named('preBuild').configure { dependsOn('syncLocales') }
