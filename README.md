@@ -40,6 +40,8 @@ docker compose down
 
 ## Langues, devises et fuseaux horaires
 
+Les préférences sont enregistrées par compte et partagées entre appareils connectés au même compte sur le même serveur. Le bouton **Refresh** web recharge les réglages et la langue, tout en conservant les champs en cours de modification. Une sauvegarde web ou Android ne transmet que les champs modifiés, pour préserver les autres changements effectués depuis un autre appareil. Le prix et sa devise sont toujours envoyés ensemble. Android relit les préférences à l’ouverture de cet écran ; son bouton de rafraîchissement recharge le formulaire et remplace les saisies non enregistrées. Les changements ne sont pas poussés automatiquement vers les écrans déjà ouverts.
+
 L’anglais est la langue par défaut, indépendamment de la langue du navigateur ou du téléphone. **English**, **Français** et **日本語** sont disponibles. Une fois connecté, la préférence du compte est conservée par le serveur et récupérée par les deux clients à la connexion. Avant connexion, le choix de langue est mémorisé localement. Les textes, erreurs API, dates et nombres sont traduits ou formatés selon cette préférence.
 
 Le catalogue des devises actives est fourni par Babel/CLDR : nom traduit, code ISO et nombre de décimales. Le prix doit respecter cette précision (exemples : `12.50` EUR, `600` JPY, `1.234` KWD). Le changement de devise demande de saisir un nouveau prix : **aucune conversion de change n’est effectuée**. Chaque consommation conserve son prix et sa devise ; des dépenses en plusieurs devises apparaissent séparément, par exemple `EUR 12.00 + JPY 600`. L’export CSV inclut aussi la devise de chaque ligne.

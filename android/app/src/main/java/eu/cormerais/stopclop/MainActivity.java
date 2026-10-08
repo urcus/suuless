@@ -105,7 +105,7 @@ public final class MainActivity extends Activity {
         HttpURLConnection connection = (HttpURLConnection) new URL(server + "/api" + path).openConnection();
         try {
             connection.setConnectTimeout(10000); connection.setReadTimeout(15000); connection.setInstanceFollowRedirects(false);
-            connection.setRequestMethod(method);
+            connection.setRequestMethod(method); connection.setUseCaches(false);
             connection.setRequestProperty("Accept-Language", language);
             if (!token.isEmpty()) connection.setRequestProperty("Authorization", "Bearer " + token);
             if (key != null) connection.setRequestProperty("Idempotency-Key", key);
@@ -330,6 +330,8 @@ public final class MainActivity extends Activity {
         page = "settings"; screen(t("my_preferences")); button(t("back"), this::dashboard);
         perform(() -> new JSONObject().put("prefs", get("/settings")).put("catalog", get("/config")), value -> {
             JSONObject result = (JSONObject)value, prefs = result.getJSONObject("prefs"); catalog = result.getJSONObject("catalog");
+            setLanguage(prefs.getString("language"));
+            screen(t("my_preferences")); button(t("back"), this::dashboard); button(t("refresh"), this::settings);
             ArrayList<String> languageCodes = new ArrayList<>(), languageLabels = new ArrayList<>();
             JSONArray languages = catalog.getJSONArray("languages");
             for (int i = 0; i < languages.length(); i++) { JSONObject item = languages.getJSONObject(i); languageCodes.add(item.getString("code")); languageLabels.add(item.getString("name")); }
@@ -360,7 +362,16 @@ public final class MainActivity extends Activity {
                     JSONObject payload = new JSONObject().put("pack_price", amount).put("currency", codes.get(currency.getSelectedItemPosition()))
                         .put("language", languageCodes.get(languageInput.getSelectedItemPosition())).put("pack_size", Integer.parseInt(size.getText().toString()))
                         .put("daily_target", Integer.parseInt(target.getText().toString())).put("timezone", (String)timezone.getTag());
-                    perform(() -> api("/settings", "PUT", payload, null), saved -> {
+                    // Only save edits from this form; another device may have changed other preferences.
+                    JSONObject changes = new JSONObject();
+                    for (String key : new String[]{"language", "pack_size", "daily_target", "timezone"}) {
+                        if (!payload.getString(key).equals(prefs.getString(key))) changes.put(key, payload.get(key));
+                    }
+                    if (!payload.getString("currency").equals(prefs.getString("currency")) ||
+                        new java.math.BigDecimal(amount).compareTo(new java.math.BigDecimal(prefs.getString("pack_price"))) != 0) {
+                        changes.put("currency", payload.getString("currency")).put("pack_price", amount);
+                    }
+                    perform(() -> api("/settings", "PUT", changes, null), saved -> {
                         setLanguage(((JSONObject)saved).getString("language")); Toast.makeText(this, t("settings_saved"), Toast.LENGTH_SHORT).show(); dashboard();
                     });
                 } catch (Exception e) { status.setText(t("invalid_input")); }

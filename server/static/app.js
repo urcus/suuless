@@ -18,7 +18,7 @@ function authLabels() {
   $('auth-submit').textContent=t(registering?'register':'login');
   $('auth-switch').textContent=t(registering?'existing_account':'register');
 }
-async function setLanguage(code) {
+async function setLanguage(code, updatePreference=true) {
   if (!dictionaries[code]) {
     const response=await fetch(`/static/locales/${code}.json`);
     if(!response.ok) throw new Error(t('network_error'));
@@ -28,10 +28,10 @@ async function setLanguage(code) {
   document.title=t('page_title');
   document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));
   document.querySelectorAll('[data-i18n-aria]').forEach(el=>el.setAttribute('aria-label',t(el.dataset.i18nAria)));
-  $('header-language').value=code; $('language').value=code; authLabels();
+  $('header-language').value=code; if(updatePreference)$('language').value=code; authLabels();
 }
 function disconnected() {
-  pendingEntry=null; token=''; sessionStorage.removeItem('stop-clop-token'); settings=null;
+  preferenceBaseline=null;pendingEntry=null; token=''; sessionStorage.removeItem('stop-clop-token'); settings=null;
   $('auth').hidden=false; $('dashboard').hidden=true; $('identity').hidden=true;
   $('token-value').value=''; $('new-token').hidden=true;
 }
@@ -97,6 +97,34 @@ async function loadCatalog(){
   timezoneOptions();pricePrecision();
   $('initial-timezone').textContent=t('initial_timezone',detectedTimezone());
 }
+const preferenceFields={pack_price:'pack-price',currency:'currency',pack_size:'pack-size',daily_target:'daily-target',language:'language',timezone:'timezone'};
+let preferenceBaseline=null;
+function preferenceDraft(){return Object.fromEntries(Object.entries(preferenceFields).map(([key,id])=>[key,$(id).value]));}
+async function syncPreferences(prefs,force=false){
+  const draft=preferenceDraft(),dirty=new Set();
+  if(preferenceBaseline&&!force)for(const key of Object.keys(preferenceFields))if(draft[key]!==preferenceBaseline[key])dirty.add(key);
+  // Keep a price paired with its selected currency while the user is editing either.
+  if(dirty.has('currency')||dirty.has('pack_price')){dirty.add('currency');dirty.add('pack_price');}
+  const oldTimezone=settings?.timezone,changedLanguage=locale!==prefs.language;
+  settings=prefs;
+  if(changedLanguage)await setLanguage(prefs.language,false);
+  if(!catalog||changedLanguage)await loadCatalog();
+  const baseline={};
+  for(const [key,id] of Object.entries(preferenceFields)){
+    const value=dirty.has(key)?draft[key]:String(prefs[key]);
+    if(key==='timezone')timezoneOptions(value);else $(id).value=value;
+    baseline[key]=dirty.has(key)?preferenceBaseline[key]:String(prefs[key]);
+  }
+  preferenceBaseline=baseline;pricePrecision();
+  if(force||oldTimezone!==prefs.timezone)localInputNow();
+}
+function preferenceChanges(){
+  const draft=preferenceDraft(),changes={};
+  for(const key of Object.keys(preferenceFields))if(draft[key]!==preferenceBaseline[key])changes[key]=draft[key];
+  if('currency' in changes||'pack_price' in changes){changes.currency=draft.currency;changes.pack_price=draft.pack_price;}
+  for(const key of ['pack_size','daily_target'])if(key in changes)changes[key]=Number(changes[key]);
+  return changes;
+}
 async function loadHistory(append=false){
   if(!append){historyOffset=0;$('history').replaceChildren();}
   const data=await api(`/cigarettes?${query()}&limit=20&offset=${historyOffset}`);
@@ -115,7 +143,7 @@ async function loadHistory(append=false){
   historyOffset+=data.items.length;$('more-history').hidden=historyOffset>=data.total;
 }
 async function refresh(){
-  settings=await api('/settings');
+  await syncPreferences(await api('/settings'));
   if($('preset').value!=='custom')setRange(Number($('preset').value));
   const data=await api(`/stats?${query()}`);
   $('today-count').textContent=number(data.today.quantity);$('today-cost').textContent=t('today_cost',costs(data.today));
@@ -146,17 +174,15 @@ async function loadTokens(){
   }
 }
 async function connected(){
-  const [me,prefs]=await Promise.all([api('/me'),api('/settings')]);settings=prefs;
-  await setLanguage(settings.language);await loadCatalog();
+  const [me,prefs]=await Promise.all([api('/me'),api('/settings')]);
+  await syncPreferences(prefs,true);
   $('username').textContent=me.username;$('auth').hidden=true;$('dashboard').hidden=false;$('identity').hidden=false;
-  $('pack-price').value=settings.pack_price;$('currency').value=settings.currency;pricePrecision();
-  $('pack-size').value=settings.pack_size;$('daily-target').value=settings.daily_target;timezoneOptions(settings.timezone);
   setRange(Number($('preset').value)||30);localInputNow();await Promise.all([refresh(),loadTokens()]);
 }
 action('header-language','change',async()=>{
   const next=$('header-language').value;
   $('header-language').disabled=true;$('logout').disabled=true;
-  try{if(token)settings=await api('/settings','PUT',{language:next});await setLanguage(next);await loadCatalog();if(token)await Promise.all([refresh(),loadTokens()]);}
+  try{if(token)settings=await api('/settings','PUT',{language:next});await setLanguage(next);if(preferenceBaseline)preferenceBaseline.language=next;await loadCatalog();if(token)await Promise.all([refresh(),loadTokens()]);}
   finally{$('header-language').value=locale;$('header-language').disabled=false;$('logout').disabled=false;}
 });
 action('auth-switch','click',()=>{
@@ -192,12 +218,9 @@ document.querySelector('.settings').addEventListener('toggle',()=>{
 });
 action('currency','change',()=>{pricePrecision();$('pack-price').value='';$('pack-price').focus();});
 action('settings-form','submit',async()=>{
-  const previousTimezone=settings.timezone;
-  settings=await api('/settings','PUT',{pack_price:$('pack-price').value,currency:$('currency').value,language:$('language').value,
-    pack_size:Number($('pack-size').value),daily_target:Number($('daily-target').value),timezone:$('timezone').value});
-  await setLanguage(settings.language);await loadCatalog();
-  if(settings.timezone!==previousTimezone)localInputNow();
-  if($('preset').value!=='custom')setRange(Number($('preset').value));notice(t('settings_saved'));await Promise.all([refresh(),loadTokens()]);
+  const changes=preferenceChanges();
+  await syncPreferences(await api('/settings','PUT',changes),true);
+  notice(t('settings_saved'));await Promise.all([refresh(),loadTokens()]);
 });
 action('token-form','submit',async()=>{const result=await api('/tokens','POST',{name:$('token-name').value});$('token-value').value=result.token;$('new-token').hidden=false;await loadTokens();});
 action('export','click',async()=>{const blob=await api(`/export.csv?${query()}`),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='stop-clop.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
