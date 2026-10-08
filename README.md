@@ -216,10 +216,14 @@ L’image est `${HARBOR_URL}/${PROJECT}/${CI_PROJECT_NAME}:X.Y.Z`. Le compte Har
 
 La publication des APK et de la release utilise uniquement le `CI_JOB_TOKEN` fourni par GitLab : aucun token personnel supplémentaire. Le registre de paquets doit être activé pour le projet. Pour un GitLab privé, les téléchargements restent soumis aux droits du projet. [Authentification des paquets génériques](https://docs.gitlab.com/user/packages/generic_packages/) et [API des releases](https://docs.gitlab.com/api/releases/).
 
-Le build Android installe le SDK 36 et Build Tools 35.0.0 dans un cache du projet, depuis les outils officiels Google dont l’archive est vérifiée. JDK 17 et le wrapper Gradle 8.13 sont utilisés. Aucun secret Android supplémentaire n’est requis pour le mode choisi :
+Le build Android installe le SDK 36 et Build Tools 35.0.0 dans un cache du projet, depuis les outils officiels Google dont l’archive est vérifiée. JDK 17 et le wrapper Gradle 8.13 sont utilisés. Les publications utilisent une clé debug stable, stockée dans la variable GitLab `ANDROID_DEBUG_KEYSTORE_BASE64` (masquée, protégée, expansion désactivée). Son contenu est le keystore PKCS12 encodé en base64 sur une ligne, alias `androiddebugkey`, mots de passe standard debug `android`. Le script le décode dans un répertoire temporaire privé et le supprime à la fin ; la clé n’est ni versionnée, ni mise en cache, ni jointe aux artifacts. Un tag de release protégé échoue si cette variable manque.
 
-- **APK debug** : installable pour les tests, avec HTTP local autorisé. La clé debug n’est pas conservée dans le cache ; un APK d’un autre pipeline peut nécessiter la désinstallation de la version debug précédente.
+- **APK debug** : installable pour les tests, avec HTTP local autorisé. Les builds disposant de la variable utilisent la même signature et peuvent se mettre à jour sans désinstallation. Les builds locaux ou branches non protégées sans cette variable gardent une clé locale distincte ; ne pas les utiliser pour mettre à jour l’APK distribué.
 - **APK release non signé** : HTTPS obligatoire ; signer avec votre propre clé Android avant installation. Cosign ne signe pas l’APK.
+
+Conserver et sauvegarder ce keystore : sa perte empêcherait les mises à jour compatibles. Ne pas régénérer la variable à chaque pipeline. Cette clé sert uniquement aux APK debug ; le choix de publier un APK release non signé reste inchangé.
+
+Les APK jusqu’à **v0.2.0 incluse** avaient une clé éphémère. Le passage à la clé stable exige une dernière désinstallation et reconnexion. Les versions suivantes conservent les préférences locales et la session chiffrée Android Keystore lors d’une mise à jour normale (`adb install -r` ou installation par-dessus). Une session expirée ou révoquée nécessite toujours une connexion ; les sessions actuelles expirent après 30 jours. [Règles de signature Android](https://developer.android.com/studio/publish/app-signing).
 
 `versionName` correspond au tag sans `v`, et `versionCode` à `CI_PIPELINE_IID`. Pour les branches : `0.1.0-dev.<IID>`. Les builds locaux sans paramètres gardent la version `0.1.0` et le code `1`.
 
