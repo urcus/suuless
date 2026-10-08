@@ -55,7 +55,19 @@ try{
   await page.setViewportSize({width:390,height:844});
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Settings fit a mobile screen');
   await page.screenshot({path:'test-results/settings-japanese-mobile.png',fullPage:true});
-  await page.locator('#header-language').selectOption('en');await lang('en');await translationCheck('en');
+  // Hold the language refresh in flight: logout must not revoke its session.
+  let releaseRefresh,refreshStarted;
+  const refreshGate=new Promise(resolve=>{releaseRefresh=resolve;});
+  const refreshSeen=new Promise(resolve=>{refreshStarted=resolve;});
+  await page.route('**/api/stats?*',async route=>{refreshStarted();await refreshGate;await route.continue();});
+  await page.locator('#header-language').selectOption('en');await lang('en');await refreshSeen;
+  try{
+    await translationCheck('en');
+    assert.equal(await page.locator('#logout').isDisabled(),true,'Logout waits for the language refresh');
+    assert.equal(await page.locator('#header-language').isDisabled(),true,'Language changes cannot overlap');
+  }finally{releaseRefresh();}
+  await page.waitForFunction(()=>!document.querySelector('#header-language').disabled);
+  await page.unroute('**/api/stats?*');
   await page.locator('#logout').click();await page.locator('#auth').waitFor({state:'visible'});
   // Profile language takes precedence over a fresh browser's default.
   const other=await browser.newContext({locale:'fr-FR'}),second=await other.newPage();

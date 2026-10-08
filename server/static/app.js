@@ -155,8 +155,9 @@ async function connected(){
 }
 action('header-language','change',async()=>{
   const next=$('header-language').value;
+  $('header-language').disabled=true;$('logout').disabled=true;
   try{if(token)settings=await api('/settings','PUT',{language:next});await setLanguage(next);await loadCatalog();if(token)await Promise.all([refresh(),loadTokens()]);}
-  finally{$('header-language').value=locale;}
+  finally{$('header-language').value=locale;$('header-language').disabled=false;$('logout').disabled=false;}
 });
 action('auth-switch','click',()=>{
   registering=!registering;authLabels();$('password-help').hidden=!registering;$('initial-timezone').hidden=!registering;
