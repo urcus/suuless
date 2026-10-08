@@ -15,6 +15,7 @@ from .timezones import (VALID_TIMEZONES, ALIASES, TZDATA_VERSION, get_zone,
                         canonical_timezone, timezone_catalog, timezone_info)
 
 from .analysis import analyze
+from .push import SCHEMA as PUSH_SCHEMA, queue_refresh, topic_for
 
 from flask import Flask, g, jsonify, request, send_from_directory
 from werkzeug.exceptions import HTTPException
@@ -78,12 +79,14 @@ def create_app(config=None):
     app = Flask(__name__, static_folder='static', static_url_path='/static')
     app.config.update(DATABASE=os.environ.get('DATABASE', 'data/stopclop.db'),
                       ALLOW_REGISTRATION=os.environ.get('ALLOW_REGISTRATION', 'true').lower() == 'true',
-                      MAX_CONTENT_LENGTH=16 * 1024)
+                      MAX_CONTENT_LENGTH=16 * 1024,
+                      PUSH_PUBLIC_URL=os.environ.get('PUSH_PUBLIC_URL', ''),
+                      PUSH_INTERNAL_URL=os.environ.get('PUSH_INTERNAL_URL', ''))
     if config:
         app.config.update(config)
     Path(app.config['DATABASE']).parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(app.config['DATABASE'])) as conn:
-        conn.executescript(SCHEMA)
+        conn.executescript(SCHEMA + PUSH_SCHEMA)
         # Serialize additive migrations across Gunicorn workers; preserve existing EUR data.
         conn.execute('BEGIN IMMEDIATE')
         try:
@@ -261,6 +264,32 @@ def create_app(config=None):
             fail('key_not_found', 404)
         return '', 204
 
+    @app.route('/api/push', methods=['GET', 'PUT', 'DELETE'])
+    def push_subscription():
+        enabled = bool(app.config['PUSH_PUBLIC_URL'] and app.config['PUSH_INTERNAL_URL'])
+        if request.method == 'DELETE':
+            with db():
+                db().execute('DELETE FROM push_subscriptions WHERE token_id=?', (g.token['id'],))
+            return '', 204
+        if request.method == 'PUT':
+            if not enabled:
+                fail('push_unavailable', 503)
+            endpoint = body().get('endpoint')
+            try:
+                topic_for(endpoint, app.config['PUSH_PUBLIC_URL'])
+            except ValueError:
+                fail('push_invalid_endpoint')
+            with db():
+                count = db().execute('SELECT COUNT(*) FROM push_subscriptions s JOIN tokens t ON t.id=s.token_id WHERE t.user_id=?', (g.user['id'],)).fetchone()[0]
+                existing = db().execute('SELECT 1 FROM push_subscriptions WHERE token_id=?', (g.token['id'],)).fetchone()
+                if count >= 16 and not existing:
+                    fail('push_limit', 429)
+                db().execute('INSERT INTO push_subscriptions(token_id,endpoint) VALUES (?,?) ON CONFLICT(token_id) DO UPDATE SET endpoint=excluded.endpoint',
+                             (g.token['id'], endpoint))
+                queue_refresh(db(), g.user['id'])
+        registered = db().execute('SELECT 1 FROM push_subscriptions WHERE token_id=?', (g.token['id'],)).fetchone() is not None
+        return jsonify(enabled=enabled, server=app.config['PUSH_PUBLIC_URL'] if enabled else None, registered=registered)
+
     @app.route('/api/settings', methods=['GET', 'PUT'])
     def settings():
         if request.method == 'PUT':
@@ -293,6 +322,7 @@ def create_app(config=None):
                 db().execute('UPDATE users SET pack_price_cents=?,pack_price_micros=?,pack_size=?,daily_target=?,timezone=?,currency=?,language=? WHERE id=?',
                              (int((Decimal(price) / 10000).quantize(Decimal('1'), rounding=ROUND_HALF_UP)),
                               price, size, target, tz, currency, locale, g.user['id']))
+                queue_refresh(db(), g.user['id'])
             g.user = db().execute('SELECT * FROM users WHERE id=?', (g.user['id'],)).fetchone()
         instant = now()
         return jsonify({**{key: g.user[key] for key in ('pack_price_cents', 'pack_size', 'daily_target', 'timezone', 'currency', 'language')},
@@ -383,6 +413,7 @@ def create_app(config=None):
                 previous = db().execute('SELECT * FROM cigarettes WHERE user_id=? AND idempotency_key=?', (g.user['id'], key)).fetchone()
                 return jsonify(serialize(previous)), 200
             row = db().execute('SELECT * FROM cigarettes WHERE id=?', (cursor.lastrowid,)).fetchone()
+            queue_refresh(db(), g.user['id'])
         return jsonify(serialize(row)), 201
 
     @app.get('/api/cigarettes')
@@ -400,6 +431,8 @@ def create_app(config=None):
     def remove(entry_id):
         with db():
             deleted = db().execute('DELETE FROM cigarettes WHERE id=? AND user_id=?', (entry_id, g.user['id'])).rowcount
+            if deleted:
+                queue_refresh(db(), g.user['id'])
         if not deleted:
             fail('entry_not_found', 404)
         return '', 204

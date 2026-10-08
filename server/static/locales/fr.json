@@ -161,5 +161,15 @@
   "widget_pin_help": "Appui long sur l’accueil, puis Widgets et Stop Clop.",
   "widget_saved": "Ajout confirmé · actualiser",
   "widget_error": "Vérifier dans l’application",
-  "widget_name": "Stop Clop · compteur du jour"
+  "widget_name": "Stop Clop · compteur du jour",
+  "push_unavailable": "Le push du widget n’est pas configuré sur ce serveur.",
+  "push_invalid_endpoint": "Choisir le serveur ntfy indiqué dans l’application, puis réactiver la synchronisation.",
+  "push_limit": "Trop de sessions push enregistrées. Révoquer les sessions inutilisées.",
+  "push_disabled": "Synchronisation du widget : périodique uniquement",
+  "push_registering": "Synchronisation du widget : inscription…",
+  "push_registration_failed": "Échec de synchronisation. Vérifier ntfy puis réactiver la synchronisation.",
+  "push_active": "Synchronisation du widget : push actif",
+  "push_enable": "Activer la synchronisation du widget",
+  "push_disable": "Désactiver la synchronisation du widget",
+  "push_setup": "Installer ntfy, choisir {0} comme serveur par défaut dans ses réglages et autoriser son fonctionnement en arrière-plan. Activer ensuite la synchronisation ici. Les messages push demandent uniquement un rafraîchissement du compteur."
 }

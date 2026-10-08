@@ -161,5 +161,15 @@
   "widget_pin_help": "Long-press your home screen, choose Widgets, then Stop Clop.",
   "widget_saved": "Saved · refresh count",
   "widget_error": "Open app to check",
-  "widget_name": "Stop Clop · daily counter"
+  "widget_name": "Stop Clop · daily counter",
+  "push_unavailable": "Widget push is not configured on this server.",
+  "push_invalid_endpoint": "Choose the ntfy server shown in the app, then enable synchronization again.",
+  "push_limit": "Too many registered push sessions. Revoke unused sessions first.",
+  "push_disabled": "Widget synchronization: periodic only",
+  "push_registering": "Widget synchronization: registering…",
+  "push_registration_failed": "Widget synchronization failed. Check ntfy and enable it again.",
+  "push_active": "Widget synchronization: push active",
+  "push_enable": "Enable widget synchronization",
+  "push_disable": "Disable widget synchronization",
+  "push_setup": "Install ntfy, select {0} as its default server in ntfy settings, and allow it to run in the background. Then enable synchronization here. Push messages only request a counter refresh."
 }

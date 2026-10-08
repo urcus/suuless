@@ -100,9 +100,25 @@ Après connexion, toucher **Add home screen widget** (**Ajouter le widget à l�
 
 - **+1** ajoute une cigarette au compte connecté et recharge le compteur du jour dans le fuseau du compte.
 - Toucher le compteur le rafraîchit ; le bouton à gauche ouvre l’application.
-- Le compteur est aussi rechargé à l’ouverture du tableau de bord et périodiquement, environ toutes les 30 minutes selon les restrictions Android. Ce n’est pas un compteur temps réel entre appareils ; l’heure de dernière mise à jour est affichée dans le fuseau du téléphone.
+- Avec la synchronisation push activée, les ajouts web/API/Stream Deck, suppressions et modifications de réglages déclenchent un rafraîchissement. Le compteur est aussi rechargé à l’ouverture du tableau de bord et périodiquement, environ toutes les 30 minutes selon les restrictions Android. L’heure de dernière mise à jour est affichée dans le fuseau du téléphone.
 - Hors connexion ou après une réponse incertaine, **Réessayer +1** conserve une seule saisie en attente avec son instant initial et sa clé d’idempotence. Réessayer après reconnexion évite un doublon même si le serveur avait déjà enregistré l’ajout. Ce bouton ne cumule pas plusieurs cigarettes hors ligne.
 - Le widget utilise la session chiffrée de l’application. Une déconnexion ou un changement de compte efface son cache et sa saisie en attente ; les anciennes données ne sont pas affichées au compte suivant. Une session expirée demande de se reconnecter.
+
+### Synchronisation push avec ntfy
+
+Le [diagramme de synchronisation](docs/push-sync.html) décrit le parcours des signaux. Le serveur ntfy est auto-hébergé ; aucun compte Firebase ni service Google n’est nécessaire.
+
+1. Installer l’application Android **ntfy**, puis choisir `https://notifications.example.com` comme serveur par défaut dans ses réglages UnifiedPush. Autoriser son fonctionnement en arrière-plan ; ntfy peut afficher une notification de service.
+2. Dans Stop Clop, après connexion, toucher **Activer la synchronisation du widget**. Le sélecteur Android permet de choisir ntfy comme relais. Rafraîchir le tableau de bord pour lire l’état **push actif**.
+3. Un changement fait depuis un autre client déclenche alors une mise à jour, généralement en quelques secondes lorsque le téléphone est connecté. Android peut retarder la réception ou le travail réseau en économie d’énergie ; ce n’est pas une garantie de délai. Toucher le compteur reste un rafraîchissement manuel immédiat lorsque le réseau est disponible.
+
+Déploiement : [`deploy/kubernetes/ntfy.yaml`](deploy/kubernetes/ntfy.yaml) fournit ntfy, son PVC et l’Ingress LAN `notifications.example.com`. Le proxy public, administré séparément, expose `notifications.example.com` vers cet Ingress et doit laisser passer les connexions longues/WebSocket sans authentification interactive. Stop Clop utilise `PUSH_PUBLIC_URL=https://notifications.example.com` et `PUSH_INTERNAL_URL=http://ntfy:8080`. Le conteneur `push-worker` du Deployment lit la file dans le même volume SQLite que l’API ; conserver une seule réplique du Deployment. Pour une autre installation, exécuter également `python -m server.push_worker` avec ces variables et le même `DATABASE`.
+
+Chaque modification et son signal sont enregistrés dans une même transaction SQLite. Les signaux successifs sont regroupés par session ; le dispatcher les envoie avec un délai de reprise croissant en cas d’échec. Une panne de ntfy ne bloque pas les ajouts. Le dernier état est relu dans l’API, ce qui rend les notifications répétées ou retardées sans danger. Une déconnexion, révocation ou expiration de session supprime son abonnement et les signaux restants. Les sessions d’un autre compte ne reçoivent pas ses signaux.
+
+Les messages contiennent uniquement `refresh`, sans compteur, clé API, identifiant de compte ni historique. Les topics UnifiedPush `up…` sont des adresses aléatoires servant de capacité d’accès : ne pas partager ces adresses. Les journaux d’accès du proxy peuvent les contenir et doivent rester privés. ntfy refuse les autres topics et limite les requêtes. Le serveur Stop Clop accepte uniquement les endpoints de l’origine ntfy configurée et construit les destinations à partir de l’adresse interne fixe, sans suivre les redirections.
+
+API authentifiée : `GET /api/push` retourne `{enabled,server,registered}` ; `PUT /api/push` avec `{"endpoint":"https://ntfy.example/up…?up=1"}` associe un endpoint à la session courante ; `DELETE /api/push` désactive cet abonnement. Maximum 16 sessions push par compte. Le relais et l’abonnement sont facultatifs : sans configuration push, le widget garde son fonctionnement périodique.
 
 ## Stream Deck : une cigarette par pression
 
@@ -267,4 +283,4 @@ docker compose cp stop-clop:/data/backup.db ./stop-clop-backup.db
 
 Cette sauvegarde contient les données de tous les comptes et les empreintes d’authentification. Pour restaurer, arrêter le service puis remplacer la base du volume par cette copie, en conservant les droits de l’UID 10001 ; retirer les anciens fichiers WAL/SHM associés à la base remplacée avant le redémarrage. Ne jamais remplacer une base ouverte.
 
-Périmètre de cette première version : pas de récupération de mot de passe par email, de rôles administrateur, de suppression de compte depuis l’interface, de notifications ou de mode hors ligne. L’APK debug sert aux essais ; la CI publie l’image Harbor et les fichiers de release sur les tags protégés ; aucune publication Play Store n’est configurée.
+Périmètre de cette première version : pas de récupération de mot de passe par email, de rôles administrateur, de suppression de compte depuis l’interface, de rappels utilisateur ou de mode hors ligne complet. L’APK debug sert aux essais ; la CI publie l’image Harbor et les fichiers de release sur les tags protégés ; aucune publication Play Store n’est configurée.

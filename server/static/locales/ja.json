@@ -161,5 +161,15 @@
   "widget_pin_help": "ホーム画面を長押しして「ウィジェット」から Stop Clop を選択してください。",
   "widget_saved": "追加済み · 本数を更新",
   "widget_error": "アプリで確認",
-  "widget_name": "Stop Clop · 今日の本数"
+  "widget_name": "Stop Clop · 今日の本数",
+  "push_unavailable": "このサーバーではウィジェットのプッシュが設定されていません。",
+  "push_invalid_endpoint": "アプリに表示されたntfyサーバーを選択し、同期を再度有効にしてください。",
+  "push_limit": "プッシュセッションが多すぎます。不要なセッションを取り消してください。",
+  "push_disabled": "ウィジェット同期：定期更新のみ",
+  "push_registering": "ウィジェット同期：登録中…",
+  "push_registration_failed": "同期に失敗しました。ntfyを確認して再度有効にしてください。",
+  "push_active": "ウィジェット同期：プッシュ有効",
+  "push_enable": "ウィジェット同期を有効にする",
+  "push_disable": "ウィジェット同期を無効にする",
+  "push_setup": "ntfyをインストールし、設定で{0}を既定のサーバーにして、バックグラウンド動作を許可してください。その後、ここで同期を有効にします。プッシュメッセージはカウンターの更新のみを要求します。"
 }

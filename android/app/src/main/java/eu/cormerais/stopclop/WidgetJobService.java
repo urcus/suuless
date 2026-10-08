@@ -37,6 +37,7 @@ public final class WidgetJobService extends JobService {
         String server=CounterWidget.server(this),token=TokenStore.load(this),language=CounterWidget.language(this);
         SharedPreferences prefs=CounterWidget.state(this);boolean saved=false;
         try{
+            PushSync.upload(this,server,token,language);
             String key=prefs.getString("pending_key","");
             if(add&&!key.isEmpty()){
                 prefs.edit().putLong("busy_until",System.currentTimeMillis()+60000).commit();CounterWidget.render(this);
@@ -46,6 +47,9 @@ public final class WidgetJobService extends JobService {
                 prefs.edit().remove("pending_key").remove("pending_time").commit();saved=true;
             }
             if(Thread.currentThread().isInterrupted()||!current(scope))return;
+            JSONObject settings=(JSONObject)ApiClient.request(server,token,language,"/settings","GET",null,null);
+            if(!current(scope))return;
+            CounterWidget.preferences(this).edit().putString("language",settings.getString("language")).commit();
             JSONObject stats=(JSONObject)ApiClient.request(server,token,language,"/stats","GET",null,null);
             CounterWidget.acceptStats(this,server,token,stats);
         }catch(Exception error){

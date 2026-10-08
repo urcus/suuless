@@ -49,7 +49,7 @@ public final class MainActivity extends Activity {
         setLanguage(getPreferences(MODE_PRIVATE).getString("language", "en"));
         server = getPreferences(MODE_PRIVATE).getString("server", ""); token = TokenStore.load(this);
         if (state != null) { pendingKey = state.getString("pendingKey"); pendingPayload = state.getString("pendingPayload"); }
-        if (token.isEmpty()) login(); else dashboard();
+        if (token.isEmpty()) login(); else { PushSync.renew(this); dashboard(); }
     }
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out); out.putString("pendingKey", pendingKey); out.putString("pendingPayload", pendingPayload);
@@ -137,7 +137,7 @@ public final class MainActivity extends Activity {
         return LocalDate.parse(iso).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT).withLocale(locale()));
     }
     private void login() {
-        page = "login"; CounterWidget.render(this); screen(t("personal_space"));
+        page = "login"; PushSync.reconcile(this); CounterWidget.render(this); screen(t("personal_space"));
         EditText address = input(t("server_address"), server.isEmpty() ? "https://" : server, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         EditText username = input(t("username"), "", InputType.TYPE_CLASS_TEXT);
         EditText password = input(t("password"), "", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
@@ -182,7 +182,9 @@ public final class MainActivity extends Activity {
             JSONObject prefs = get("/settings"); zone = prefs.getString("timezone");
             LocalDate end = LocalDate.parse(prefs.getString("local_today")); localNow = prefs.getString("local_datetime"); rangeEnd = end.toString(); rangeStart = end.minusDays(days - 1).toString();
             catalog = get("/config");
-            return new JSONObject().put("settings", prefs).put("stats", get("/stats" + range()));
+            JSONObject push;
+            try { push=get("/push"); } catch(ApiClient.HttpError error) { if(error.status!=404)throw error; push=new JSONObject().put("enabled",false); }
+            return new JSONObject().put("push",push).put("settings", prefs).put("stats", get("/stats" + range()));
         }, value -> {
             JSONObject bundle = (JSONObject)value, stats = bundle.getJSONObject("stats"), today = stats.getJSONObject("today"), period = stats.getJSONObject("period"), total = stats.getJSONObject("total");
             setLanguage(bundle.getJSONObject("settings").getString("language"));
@@ -201,6 +203,14 @@ public final class MainActivity extends Activity {
             button(t("past_entry"), this::entryForm);
             button(t("history_daily"), this::history);
             button(t("settings"), this::settings);
+            if(bundle.getJSONObject("push").optBoolean("enabled")) {
+                JSONObject push=bundle.getJSONObject("push");
+                text(t(PushSync.state(this).getString("status","push_disabled")),14);
+                button(t("push_enable"), () -> new AlertDialog.Builder(this).setTitle(t("push_enable"))
+                    .setMessage(t("push_setup",push.optString("server")))
+                    .setPositiveButton(t("push_enable"),(dialog,which)->PushSync.enable(this)).setNegativeButton(t("cancel"),null).show());
+                if(PushSync.enabled(this))button(t("push_disable"),()->perform(()->api("/push","DELETE",null,null),unused->{PushSync.disable(this);dashboard();}));
+            }
             button(t("widget_add_home"), () -> {
                 android.appwidget.AppWidgetManager manager=android.appwidget.AppWidgetManager.getInstance(this);
                 if(manager.isRequestPinAppWidgetSupported())manager.requestPinAppWidget(new android.content.ComponentName(this,CounterWidget.class),null,null);
