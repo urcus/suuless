@@ -129,6 +129,8 @@ image:publish:
       AUTH="$(printf '%s:%s' "${HARBOR_USER}" "${HARBOR_PASSWORD}" | base64 | tr -d '\n')"
       printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${HARBOR_URL}" "${AUTH}" > "${DOCKER_CONFIG}/config.json"
       trap 'rm -f "${DOCKER_CONFIG}/config.json"' EXIT
+      # Credentials already have mode 0600; build files must be readable by USER app.
+      umask 022
       /kaniko/executor \
         --context "${CI_PROJECT_DIR}" \
         --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
