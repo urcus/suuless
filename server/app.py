@@ -359,7 +359,13 @@ def create_app(config=None):
                 occurred = occurred.astimezone(UTC)
             except (AttributeError, TypeError, ValueError, OverflowError):
                 fail('invalid_timestamp')
-        if occurred > now() or occurred.year < 2000:
+        received_at = now()
+        # A widget's clock can be slightly ahead even with automatic time enabled.
+        # Clamp a small skew to server time so no future entry/day is stored.
+        # Explicit local dates remain strict (they are manually entered).
+        if 'occurred_at' in data and received_at < occurred <= received_at + timedelta(seconds=5):
+            occurred = received_at
+        if occurred > received_at or occurred.year < 2000:
             fail('invalid_entry_date')
         key = request.headers.get('Idempotency-Key')
         if key is not None and not re.fullmatch(r'[A-Za-z0-9_.:-]{1,100}', key):

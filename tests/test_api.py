@@ -5,7 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
 
 from server.app import create_app
@@ -123,6 +123,35 @@ class ApiTest(unittest.TestCase):
         for query in ['start=x','end=0001-01-01','start=2020-01-01&end=2025-01-01','start=2025-02-02&end=2025-01-01']:
             self.assertEqual(self.client.get('/api/stats?'+query,headers=self.auth).status_code,400)
         self.assertEqual(self.client.post('/api/cigarettes',json=[],headers=self.auth).status_code,400)
+
+    def test_client_clock_skew_is_clamped_but_future_dates_are_rejected(self):
+        received = datetime(2025, 1, 1, 12, tzinfo=timezone.utc)
+        with patch('server.app.now', return_value=received):
+            for seconds in [.7, 5]:
+                response = self.add({'occurred_at': (received + timedelta(seconds=seconds)).isoformat(), 'source': 'android'})
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(datetime.fromisoformat(response.json['occurred_at']), received)
+            for seconds in [5.001, 60, 86400]:
+                response = self.add({'occurred_at': (received + timedelta(seconds=seconds)).isoformat()})
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json['code'], 'invalid_entry_date')
+            # Manually entered local dates remain strict, including sub-second futures.
+            self.assertEqual(self.add({'occurred_at_local': '2025-01-01T13:00:00.700000'}).status_code, 400)
+            past = received - timedelta(seconds=.7)
+            response = self.add({'occurred_at': past.isoformat()})
+            self.assertEqual(datetime.fromisoformat(response.json['occurred_at']), past)
+
+    def test_widget_clock_skew_at_midnight_keeps_today_and_retry_idempotent(self):
+        self.settings(timezone='Asia/Tokyo')
+        received = datetime(2025, 1, 1, 14, 59, 59, 800000, tzinfo=timezone.utc)
+        payload = {'occurred_at': '2025-01-01T15:00:00.500000Z', 'source': 'android'}
+        headers = dict(self.auth, **{'Idempotency-Key': 'widget-clock-skew'})
+        with patch('server.app.now', return_value=received):
+            first, retry = self.add(payload, headers), self.add(payload, headers)
+            self.assertEqual((first.status_code, retry.status_code), (201, 200))
+            self.assertEqual(first.json['id'], retry.json['id'])
+            self.assertEqual(first.json['local_datetime'][:10], '2025-01-01')
+            self.assertEqual(self.stats()['today']['quantity'], 1)
 
     def test_analysis_previous_period_and_user_isolation(self):
         self.settings(timezone='Asia/Tokyo')
