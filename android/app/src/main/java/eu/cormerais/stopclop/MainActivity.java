@@ -33,7 +33,9 @@ public final class MainActivity extends Activity {
     private String rangeStart, rangeEnd, localNow;
     private String language = "en";
     private Translations translations;
-    private JSONObject catalog;
+    private JSONObject catalog, snapshot;
+    private boolean chartCost=false;
+    private String chartCurrency="";
     private String t(String key, Object... args) { return translations.text(key, args); }
     private Locale locale() { return Locale.forLanguageTag(language); }
     private String number(double value) { return NumberFormat.getNumberInstance(locale()).format(value); }
@@ -46,6 +48,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        if(android.os.Build.VERSION.SDK_INT>=27)getWindow().getDecorView().setSystemUiVisibility(getWindow().getDecorView().getSystemUiVisibility()|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         setLanguage(getPreferences(MODE_PRIVATE).getString("language", "en"));
         server = getPreferences(MODE_PRIVATE).getString("server", ""); token = TokenStore.load(this);
         if (state != null) { pendingKey = state.getString("pendingKey"); pendingPayload = state.getString("pendingPayload"); }
@@ -70,41 +73,57 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy() { network.shutdownNow(); super.onDestroy(); }
     private int dp(int n) { return (int) (n * getResources().getDisplayMetrics().density); }
     private void screen(String title) {
-        LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setBackgroundColor(0xfff5f5ef);
-        root.setPadding(dp(20), dp(16), dp(20), dp(12));
-        root.setOnApplyWindowInsetsListener((v, insets) -> {
-            v.setPadding(dp(20) + insets.getSystemWindowInsetLeft(), dp(16) + insets.getSystemWindowInsetTop(),
-                dp(20) + insets.getSystemWindowInsetRight(), dp(12) + insets.getSystemWindowInsetBottom()); return insets;
-        });
-        TextView brand = new TextView(this); brand.setText("◉ stop clop"); brand.setTextSize(27); brand.setTextColor(0xff163d32); root.addView(brand);
-        status = new TextView(this); status.setTextSize(14); status.setPadding(0, dp(10), 0, dp(10)); status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); root.addView(status);
-        ScrollView scroll = new ScrollView(this); content = new LinearLayout(this); content.setOrientation(LinearLayout.VERTICAL); scroll.addView(content);
-        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1)); setContentView(root); root.requestApplyInsets();
-        text(title, 26);
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(Ui.PAPER);
+        root.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;});
+        LinearLayout header=new LinearLayout(this);header.setGravity(android.view.Gravity.CENTER_VERTICAL);header.setPadding(dp(24),dp(14),dp(24),dp(6));
+        TextView brand=Ui.label(this,"◉  stop clop",20,Ui.INK,true);header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
+        if(!page.equals("login")&&!page.equals("entry")){
+            Button refresh=Ui.button(this,"↻",false,()->{if(!busy)reload();});refresh.setContentDescription(t("refresh"));header.addView(refresh,new LinearLayout.LayoutParams(dp(48),dp(48)));
+        }
+        root.addView(header);
+        status=Ui.label(this,"",13,Ui.ORANGE,false);status.setPadding(dp(24),dp(8),dp(24),dp(8));status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);status.setVisibility(View.GONE);root.addView(status);
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(24),dp(8),dp(24),dp(20));scroll.addView(content);
+        root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        if(!page.equals("login")){
+            LinearLayout nav=new LinearLayout(this);nav.setPadding(dp(12),dp(6),dp(12),dp(8));nav.setBackgroundColor(Ui.WHITE);
+            String[] pages={"dashboard","analysis","history","settings"},keys={"nav_today","nav_analysis","history","settings"};
+            for(int i=0;i<4;i++){
+                final String target=pages[i];boolean active=page.equals(target)||(page.equals("entry")&&i==2);
+                LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(android.view.Gravity.CENTER);item.setPadding(dp(3),dp(8),dp(3),dp(8));
+                item.setBackground(Ui.shape(this,active?Ui.MINT:Ui.WHITE,18));item.addView(new Ui.Icon(this,i,active?Ui.GREEN:Ui.MUTED),new LinearLayout.LayoutParams(dp(24),dp(24)));
+                TextView label=Ui.label(this,t(keys[i]),11,active?Ui.GREEN:Ui.MUTED,active);label.setGravity(android.view.Gravity.CENTER);item.addView(label);
+                item.setContentDescription(t(keys[i]));item.setFocusable(true);item.setClickable(true);item.setSelected(active);item.setOnClickListener(v->{if(!busy&&!page.equals(target))navigate(target);});
+                nav.addView(item,new LinearLayout.LayoutParams(0,-2,1));
+            }
+            root.addView(nav);
+        }
+        setContentView(root);root.requestApplyInsets();text(title,29);
     }
-    private TextView text(String value, int size) {
-        TextView v = new TextView(this); v.setText(value); v.setTextSize(size); v.setTextColor(0xff213d35); v.setPadding(0, dp(10), 0, dp(10)); content.addView(v); return v;
+    private void setStatus(String value){status.setText(value);status.setVisibility(value==null||value.isEmpty()?View.GONE:View.VISIBLE);}
+    private void navigate(String target){if(target.equals("analysis"))analytics();else if(target.equals("history"))history();else if(target.equals("settings"))settings();else dashboard();}
+    private void reload(){navigate(page);}
+    @Override public void onBackPressed(){if(!page.equals("dashboard")&&!page.equals("login")&&!busy)dashboard();else super.onBackPressed();}
+    private TextView text(String value,int size){TextView v=Ui.label(this,value,size,size>=20?Ui.INK:Ui.MUTED,size>=20);v.setPadding(0,dp(6),0,dp(8));content.addView(v);return v;}
+    private TextView cardText(LinearLayout card,String value,int size,int color,boolean bold){TextView v=Ui.label(this,value,size,color,bold);v.setPadding(0,dp(3),0,dp(4));card.addView(v);return v;}
+    private LinearLayout card(int color){LinearLayout c=Ui.card(this,color);content.addView(c);return c;}
+    private EditText input(String label,String value,int type){
+        TextView caption=text(label,13);EditText field=new EditText(this);field.setId(View.generateViewId());caption.setLabelFor(field.getId());field.setSingleLine(true);field.setInputType(type);field.setText(value);field.setTextSize(16);field.setTextColor(Ui.INK);
+        field.setPadding(dp(14),dp(14),dp(14),dp(14));field.setBackground(Ui.shape(this,Ui.WHITE,12));LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.setMargins(0,0,0,dp(12));content.addView(field,params);return field;
     }
-    private EditText input(String label, String value, int type) {
-        TextView caption = text(label, 14);
-        EditText field = new EditText(this); field.setId(View.generateViewId()); caption.setLabelFor(field.getId());
-        field.setSingleLine(true); field.setInputType(type); field.setText(value); content.addView(field); return field;
-    }
-    private Button button(String label, Runnable action) {
-        Button b = new Button(this); b.setText(label); b.setAllCaps(false); b.setOnClickListener(v -> { if (!busy) action.run(); }); content.addView(b); return b;
-    }
+    private Button button(String label,Runnable action){Button b=Ui.button(this,label,label.equals(t("save"))||label.equals(t("login"))||label.equals(t("plus_one")),()->{if(!busy)action.run();});content.addView(b);return b;}
     private void perform(Work work, Done done) {
-        if (busy) return; busy = true; status.setText(t("connecting"));
+        if (busy) return; busy = true; setStatus(t("connecting"));
         network.execute(() -> {
             try {
                 Object value = work.run();
-                runOnUiThread(() -> { if (isDestroyed()) return; busy = false; status.setText("");
-                    try { done.accept(value); } catch (Exception e) { status.setText(e.getMessage()); }
+                runOnUiThread(() -> { if (isDestroyed()) return; busy = false; setStatus("");
+                    try { done.accept(value); } catch (Exception e) { setStatus(e.getMessage()); }
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> { if (isDestroyed()) return; busy = false;
                     if (error instanceof ExpiredSession) { token = ""; TokenStore.clear(this); login(); }
-                    status.setText(error instanceof java.io.IOException ? t("network_error") : error.getMessage());
+                    setStatus(error instanceof java.io.IOException ? t("network_error") : error.getMessage());
                 });
             }
         });
@@ -136,7 +155,7 @@ public final class MainActivity extends Activity {
         JSONObject amounts = data.getJSONObject("costs"); ArrayList<String> values = new ArrayList<>();
         ArrayList<String> codes = new ArrayList<>(); amounts.keys().forEachRemaining(codes::add); java.util.Collections.sort(codes);
         for (String code : codes) values.add(money(amounts.getDouble(code), code));
-        return String.join(" + ", values);
+        return String.join(" · ", values);
     }
     private String dateLabel(String iso) {
         return LocalDate.parse(iso).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT).withLocale(locale()));
@@ -170,68 +189,110 @@ public final class MainActivity extends Activity {
                         token = ((JSONObject)value).getString("token"); TokenStore.save(this, token);
                         getPreferences(MODE_PRIVATE).edit().putString("server", server).apply(); password.setText(""); dashboard();
                     });
-                } catch (Exception e) { status.setText(e.getMessage()); }
+                } catch (Exception e) { setStatus(e.getMessage()); }
             });
         }
         button(t("language") + " · " + language, () -> new AlertDialog.Builder(this).setTitle(t("language"))
             .setItems(new String[]{"English", "Français", "日本語"}, (dialog, index) -> {
                 server = address.getText().toString(); setLanguage(new String[]{"en","fr","ja"}[index]); login();
             }).show());
-        text(t("android_https"), 13);
+
     }
     private String range() { return "?start=" + rangeStart + "&end=" + rangeEnd; }
-    private void dashboard() {
-        page = "dashboard"; screen(t("tagline"));
-        button(t("refresh"), this::dashboard);
-        perform(() -> {
-            JSONObject prefs = get("/settings"); zone = prefs.getString("timezone");
-            LocalDate end = LocalDate.parse(prefs.getString("local_today")); localNow = prefs.getString("local_datetime"); rangeEnd = end.toString(); rangeStart = end.minusDays(days - 1).toString();
-            catalog = get("/config");
-            JSONObject push;
-            try { push=get("/sync/config"); push.put("enabled",true); } catch(ApiClient.HttpError error) { if(error.status!=404)throw error; push=new JSONObject().put("enabled",false); }
-            return new JSONObject().put("push",push).put("settings", prefs).put("stats", get("/stats" + range()));
-        }, value -> {
-            JSONObject bundle = (JSONObject)value, stats = bundle.getJSONObject("stats"), today = stats.getJSONObject("today"), period = stats.getJSONObject("period"), total = stats.getJSONObject("total");
-            setLanguage(bundle.getJSONObject("settings").getString("language"));
-            CounterWidget.acceptStats(this, server, token, stats);
-            screen(t("tagline")); button(t("refresh"), this::dashboard);
-            // Currency names and precision come from the same catalog as the web app.
-            if (catalog == null) { catalog = new JSONObject(); catalog.put("currencies", new JSONArray()); }
-            text(t("today") + " · " + zone, 15); text(t("quantity_count", number(today.getInt("quantity"))), 38); text(costs(today), 25);
-            button(t("plus_one"), () -> addOne());
-            if (pendingPayload != null) button(t("retry_entry"), () -> { try { submit(new JSONObject(pendingPayload)); } catch (Exception e) { status.setText(e.getMessage()); } });
-            text(t("target_label", number(bundle.getJSONObject("settings").getInt("daily_target"))), 14);
-            text(t("last_days", number(days)), 23);
-            text(t("quantity_count", number(period.getInt("quantity"))) + " · " + costs(period) + "\n" + t("average", number(period.getDouble("average_per_day")), number(days)), 19);
-            text(t("all_time") + " : " + t("quantity_count", number(total.getInt("quantity"))) + " · " + costs(total), 18);
-            button(t("change_period"), () -> new AlertDialog.Builder(this).setTitle(t("period")).setItems(new String[]{t("last_7"), t("last_30"), t("last_90")}, (d, index) -> { days = new int[]{7,30,90}[index]; dashboard(); }).show());
-            button(t("past_entry"), this::entryForm);
-            button(t("history_daily"), this::history);
-            button(t("settings"), this::settings);
-            if(bundle.getJSONObject("push").optBoolean("enabled")) {
-                PushSync.automatic(this);
-                text(t(PushSync.state(this).getString("status","push_disabled")),14);
-                if(PushSync.enabled(this)){
-                    button(t("sync_permissions"),()->PushSync.permissions(this));
-                    button(t("push_disable"),()->{PushSync.disable(this);dashboard();});
-                }else button(t("push_enable"),()->{PushSync.enable(this);dashboard();});
-            }
-            button(t("widget_add_home"), () -> {
-                android.appwidget.AppWidgetManager manager=android.appwidget.AppWidgetManager.getInstance(this);
-                if(manager.isRequestPinAppWidgetSupported())manager.requestPinAppWidget(new android.content.ComponentName(this,CounterWidget.class),null,null);
-                else Toast.makeText(this,t("widget_pin_help"),Toast.LENGTH_LONG).show();
-            });
-
-            button(t("logout"), () -> perform(() -> api("/auth/logout", "POST", null, null), unused -> { token = ""; pendingKey = null; pendingPayload = null; TokenStore.clear(this); login(); }));
+    private void dashboard(){loadSnapshot("dashboard");}
+    private void analytics(){loadSnapshot("analysis");}
+    private void loadSnapshot(String target){
+        page=target;screen(t(target.equals("dashboard")?"nav_today":"nav_analysis"));
+        perform(()->{
+            JSONObject prefs=get("/settings");zone=prefs.getString("timezone");
+            LocalDate end=LocalDate.parse(prefs.getString("local_today"));localNow=prefs.getString("local_datetime");rangeEnd=end.toString();rangeStart=end.minusDays(days-1).toString();
+            catalog=get("/config");JSONObject push;
+            try{push=get("/sync/config");push.put("enabled",true);}catch(ApiClient.HttpError error){if(error.status!=404)throw error;push=new JSONObject().put("enabled",false);}
+            return new JSONObject().put("push",push).put("settings",prefs).put("stats",get("/stats"+range()));
+        },value->{
+            snapshot=(JSONObject)value;setLanguage(snapshot.getJSONObject("settings").getString("language"));CounterWidget.acceptStats(this,server,token,snapshot.getJSONObject("stats"));
+            if(target.equals("analysis"))renderAnalysis();else renderToday();
+            if(snapshot.getJSONObject("push").optBoolean("enabled"))PushSync.automatic(this);
         });
     }
+    private void renderToday() throws Exception {
+        screen(t("nav_today"));JSONObject stats=snapshot.getJSONObject("stats"),today=stats.getJSONObject("today"),prefs=snapshot.getJSONObject("settings"),analysis=stats.getJSONObject("analysis");
+        text(LocalDate.parse(rangeEnd).format(DateTimeFormatter.ofPattern("EEEE d MMMM",locale()))+" · "+zone,13);
+        LinearLayout hero=card(Ui.GREEN);cardText(hero,t("daily_consumption"),14,Ui.MINT,false);
+        cardText(hero,number(today.getInt("quantity")),64,Ui.WHITE,true);cardText(hero,t("cigarettes"),16,Ui.MINT,false);
+        Button add=Ui.button(this,t("plus_one"),false,()->{if(!busy)addOne();});hero.addView(add);
+        int target=prefs.getInt("daily_target");
+        if(target>0){ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(target);progress.setProgress(Math.min(today.getInt("quantity"),target));progress.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.MINT));progress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff426858));progress.setContentDescription(t("target_label",number(target)));hero.addView(progress,new LinearLayout.LayoutParams(-1,dp(8)));}
+        cardText(hero,t("target_label",number(target)),12,Ui.MINT,false);
+        if(pendingPayload!=null)button(t("retry_entry"),()->{try{submit(new JSONObject(pendingPayload));}catch(Exception e){setStatus(e.getMessage());}});
+        LinearLayout cost=card(Ui.WHITE);cardText(cost,t("spent_today"),13,Ui.MUTED,false);cardText(cost,costs(today),28,Ui.INK,true);
+        cardText(cost,t("average",number(analysis.getDouble("average_quantity_per_day")),number(days)),13,Ui.MUTED,false);
+        LinearLayout trend=card(Ui.WHITE);cardText(trend,t("week_at_glance"),20,Ui.INK,true);
+        JSONArray daily=stats.getJSONArray("daily"),week=new JSONArray();for(int i=Math.max(0,daily.length()-7);i<daily.length();i++)week.put(daily.getJSONObject(i));
+        double average=0;for(int i=0;i<week.length();i++)average+=week.getJSONObject(i).getDouble("quantity");average/=Math.max(1,week.length());
+        chart(trend,week,false,"",average,false);
+        trend.addView(Ui.button(this,t("explore_analysis"),false,()->{if(!busy)analytics();}));
+        button(t("past_entry"),this::entryForm);
+    }
+    private void periodChips(){
+        LinearLayout row=new LinearLayout(this);content.addView(row);
+        for(int count:new int[]{7,30,90}){Button b=Ui.button(this,t("short_days",number(count)),days==count,()->{if(!busy){days=count;navigate(page);}});LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.setMargins(dp(3),dp(6),dp(3),dp(8));row.addView(b,p);b.setSelected(days==count);}
+    }
+    private String signed(double value){return (value>0?"+":"")+number(value);}
+    private void renderAnalysis() throws Exception {
+        screen(t("nav_analysis"));periodChips();JSONObject stats=snapshot.getJSONObject("stats"),analysis=stats.getJSONObject("analysis"),comparison=analysis.getJSONObject("comparison"),period=stats.getJSONObject("period");
+        text(dateLabel(rangeStart)+" — "+dateLabel(rangeEnd),13);
+        LinearLayout summary=card(Ui.GREEN);cardText(summary,t("average_daily_quantity"),13,Ui.MINT,false);cardText(summary,number(analysis.getDouble("average_quantity_per_day")),38,Ui.WHITE,true);
+        String percent=comparison.isNull("quantity_percent")?t("percent_unavailable"):signed(comparison.getDouble("quantity_percent"))+" %";
+        cardText(summary,percent+" · "+t("previous_comparison"),13,Ui.MINT,false);
+        LinearLayout chartCard=card(Ui.WHITE);cardText(chartCard,t("evolution"),20,Ui.INK,true);
+        LinearLayout measures=new LinearLayout(this);chartCard.addView(measures);
+        for(boolean cost:new boolean[]{false,true}){Button b=Ui.button(this,t(cost?"cost":"quantity"),chartCost==cost,()->{chartCost=cost;try{renderAnalysis();}catch(Exception e){setStatus(e.getMessage());}});LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-2,1);params.setMargins(dp(3),dp(6),dp(3),dp(6));measures.addView(b,params);b.setSelected(chartCost==cost);}
+        ArrayList<String> codes=new ArrayList<>();analysis.getJSONObject("average_cost_per_day").keys().forEachRemaining(codes::add);java.util.Collections.sort(codes);
+        if(!codes.contains(chartCurrency))chartCurrency=codes.contains(snapshot.getJSONObject("settings").getString("currency"))?snapshot.getJSONObject("settings").getString("currency"):codes.get(0);
+        if(chartCost){
+            LinearLayout old=content;content=chartCard;Spinner picker=select("chart_currency",codes,codes.indexOf(chartCurrency));content=old;
+            picker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int position,long id){String selected=codes.get(position);if(!selected.equals(chartCurrency)){chartCurrency=selected;try{renderAnalysis();}catch(Exception e){setStatus(e.getMessage());}}}});
+        }
+        chart(chartCard,analysis.getJSONArray("daily"),chartCost,chartCurrency,chartCost?analysis.getJSONObject("average_cost_per_day").getDouble(chartCurrency):analysis.getDouble("average_quantity_per_day"),true);
+        cardText(chartCard,t("average_legend"),12,Ui.MUTED,false);
+        chartCard.addView(Ui.button(this,t("daily_figures"),false,()->dailyFigures(analysis)));
+        LinearLayout spending=card(Ui.PEACH);cardText(spending,t("average_daily_cost"),13,Ui.ORANGE,false);
+        for(String code:codes){cardText(spending,money(analysis.getJSONObject("average_cost_per_day").getDouble(code),code),27,Ui.INK,true);
+            JSONObject percentages=comparison.getJSONObject("cost_percent");String delta=percentages.isNull(code)?t("percent_unavailable"):signed(percentages.getDouble(code))+" %";
+            cardText(spending,delta+" · "+t("previous_comparison"),12,Ui.MUTED,false);}
+        LinearLayout totals=card(Ui.WHITE);cardText(totals,t("period_total"),12,Ui.MUTED,false);cardText(totals,t("quantity_count",number(period.getInt("quantity")))+" · "+costs(period),21,Ui.INK,true);
+        cardText(totals,t("all_time"),12,Ui.MUTED,false);cardText(totals,t("quantity_count",number(stats.getJSONObject("total").getInt("quantity")))+" · "+costs(stats.getJSONObject("total")),19,Ui.INK,true);
+        JSONObject previous=analysis.getJSONObject("previous_period");
+        text(t("previous_dates",dateLabel(previous.getString("start")),dateLabel(previous.getString("end"))),12);
+        text(t("analysis_range",number(analysis.getInt("minimum_quantity")),number(analysis.getInt("maximum_quantity")),number(analysis.getInt("days_with_entries"))),12);
+        text(t("analysis_basis"),12);if(analysis.optBoolean("includes_today"))text(t("day_in_progress"),12);text(t("empty_day_note"),12);
+    }
+    private void chart(LinearLayout parent,JSONArray daily,boolean cost,String currency,double average,boolean details) throws Exception {
+        double[] values=new double[daily.length()];String[] labels=new String[daily.length()];
+        for(int i=0;i<daily.length();i++){JSONObject day=daily.getJSONObject(i);values[i]=cost?day.getJSONObject("costs").optDouble(currency,0):day.getDouble("quantity");labels[i]=LocalDate.parse(day.getString("date")).format(DateTimeFormatter.ofPattern("d MMM",locale()));}
+        TextView selected=Ui.label(this,"",14,Ui.INK,true);selected.setPadding(0,dp(8),0,dp(4));selected.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        TrendChart chart=new TrendChart(this,values,labels,average,cost,locale(),index->{
+            try{JSONObject day=daily.getJSONObject(index);String label=dateLabel(day.getString("date"))+" · "+(cost?money(values[index],currency):t("quantity_count",number(values[index])));
+                if(details){double delta=cost?day.getJSONObject("cost_deltas").optDouble(currency,0):day.getDouble("quantity_delta");label+="\n"+signed(delta)+(cost?" "+currency:"")+" · "+t(cost?"cost_difference":"quantity_difference");}
+                selected.setText(label);
+            }catch(Exception e){setStatus(e.getMessage());}
+        });
+        chart.setContentDescription(t("chart_accessibility"));parent.addView(chart,new LinearLayout.LayoutParams(-1,dp(details?220:150)));parent.addView(selected);chart.select(Math.max(0,daily.length()-1));
+        if(details){LinearLayout controls=new LinearLayout(this);for(int direction:new int[]{-1,1}){Button b=Ui.button(this,t(direction<0?"previous_day":"next_day"),false,()->{chart.step(direction);});LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-2,1);params.setMargins(dp(3),0,dp(3),0);controls.addView(b,params);}parent.addView(controls);}
+    }
+    private void dailyFigures(JSONObject analysis){
+        try{JSONArray days=analysis.getJSONArray("daily");StringBuilder data=new StringBuilder();for(int i=days.length()-1;i>=0;i--){JSONObject day=days.getJSONObject(i);data.append(dateLabel(day.getString("date"))).append(" · ").append(t("quantity_count",number(day.getInt("quantity")))).append("\n").append(costs(day)).append("\n\n");}
+            new AlertDialog.Builder(this).setTitle(t("daily_figures")).setMessage(data.toString()).setPositiveButton(t("back"),null).show();
+        }catch(Exception e){setStatus(e.getMessage());}
+    }
     private void addOne() {
-        try { submit(new JSONObject().put("source", "android")); } catch (Exception e) { status.setText(e.getMessage()); }
+        try { submit(new JSONObject().put("source", "android")); } catch (Exception e) { setStatus(e.getMessage()); }
     }
     private void submit(JSONObject payload) throws Exception {
         String serialized = payload.toString();
         if (pendingKey != null && !serialized.equals(pendingPayload)) {
-            status.setText(t("pending_entry")); return;
+            setStatus(t("pending_entry")); return;
         }
         if (pendingKey == null) { pendingKey = UUID.randomUUID().toString(); pendingPayload = serialized; }
         perform(() -> api("/cigarettes", "POST", payload, pendingKey), value -> {
@@ -242,41 +303,38 @@ public final class MainActivity extends Activity {
         page = "entry"; screen(t("complete_history"));
         EditText quantity = input(t("quantity"), "1", InputType.TYPE_CLASS_NUMBER);
         EditText date = input(t("local_datetime"), OffsetDateTime.parse(localNow).toLocalDateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")), InputType.TYPE_CLASS_TEXT);
+        button(t("choose_datetime"),()->{
+            LocalDateTime initial;try{initial=LocalDateTime.parse(date.getText().toString(),DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));}catch(Exception e){initial=OffsetDateTime.parse(localNow).toLocalDateTime();}
+            final LocalDateTime selected=initial;
+            new android.app.DatePickerDialog(this,(picker,y,m,d)->new android.app.TimePickerDialog(this,(clock,h,min)->date.setText(LocalDateTime.of(y,m+1,d,h,min).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))),selected.getHour(),selected.getMinute(),true).show(),initial.getYear(),initial.getMonthValue()-1,initial.getDayOfMonth()).show();
+        });
         text(t("entry_zone_note", zone), 14);
         button(t("save"), () -> {
             try {
                 LocalDateTime local = LocalDateTime.parse(date.getText().toString(), DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm").withResolverStyle(java.time.format.ResolverStyle.STRICT));
                 submit(new JSONObject().put("quantity", Integer.parseInt(quantity.getText().toString())).put("source", "android").put("occurred_at_local", local.toString()));
-            } catch (Exception e) { status.setText(t("invalid_input")); }
+            } catch (Exception e) { setStatus(t("invalid_input")); }
         });
         button(t("back"), this::dashboard);
     }
-    private void history() {
-        page = "history"; historyOffset = 0; screen(t("last_days", number(days)));
-        button(t("back_dashboard"), this::dashboard);
-        perform(() -> get("/stats" + range()), value -> {
-            JSONArray daily = ((JSONObject)value).getJSONArray("daily");
-            for (int i = daily.length() - 1; i >= 0; i--) { JSONObject day = daily.getJSONObject(i); text(dateLabel(day.getString("date")) + " · " + t("quantity_count", number(day.getInt("quantity"))) + " · " + costs(day), 15); }
-            text(t("empty_day_note"), 13);
-            text(t("history"), 23); loadEntries();
-        });
+    private void history(){
+        if(rangeEnd==null){dashboard();return;}
+        page="history";historyOffset=0;if(rangeEnd!=null)rangeStart=LocalDate.parse(rangeEnd).minusDays(days-1).toString();screen(t("history"));periodChips();text(dateLabel(rangeStart)+" — "+dateLabel(rangeEnd),13);button(t("past_entry"),this::entryForm);loadEntries();
     }
-    private void loadEntries() {
-        perform(() -> get("/cigarettes" + range() + "&limit=30&offset=" + historyOffset), value -> {
-            JSONObject result = (JSONObject)value; JSONArray items = result.getJSONArray("items");
-            if (items.length() == 0) text(t("no_entries"), 16);
-            for (int i = 0; i < items.length(); i++) {
-                JSONObject row = items.getJSONObject(i); int id = row.getInt("id");
-                String date = OffsetDateTime.parse(row.getString("local_datetime")).format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(locale()));
-                text(date + " (UTC" + row.getString("local_datetime").substring(row.getString("local_datetime").length() - 6) + ") · " + t("quantity_count", number(row.getInt("quantity"))) + " · " + money(row.getDouble("cost"), row.getString("currency")), 16);
-                button(t("delete"), () -> new AlertDialog.Builder(this).setMessage(t("delete_confirm"))
-                    .setNegativeButton(t("cancel"), null).setPositiveButton(t("delete"), (dialog, which) -> perform(() -> api("/cigarettes/" + id, "DELETE", null, null), unused -> history())).show());
+    private void loadEntries(){
+        perform(()->get("/cigarettes"+range()+"&limit=30&offset="+historyOffset),value->{
+            JSONObject result=(JSONObject)value;JSONArray items=result.getJSONArray("items");
+            if(items.length()==0)text(t("no_entries"),16);
+            for(int i=0;i<items.length();i++){
+                JSONObject row=items.getJSONObject(i);int id=row.getInt("id");LinearLayout item=card(Ui.WHITE);
+                OffsetDateTime date=OffsetDateTime.parse(row.getString("local_datetime"));
+                cardText(item,date.format(DateTimeFormatter.ofPattern("EEE d MMM · HH:mm",locale())),13,Ui.MUTED,false);
+                cardText(item,t("quantity_count",number(row.getInt("quantity"))),23,Ui.INK,true);
+                cardText(item,money(row.getDouble("cost"),row.getString("currency"))+" · "+row.getString("source"),14,Ui.MUTED,false);
+                Button remove=Ui.button(this,t("delete"),false,()->{if(!busy)new AlertDialog.Builder(this).setMessage(t("delete_confirm")).setNegativeButton(t("cancel"),null).setPositiveButton(t("delete"),(d,w)->perform(()->api("/cigarettes/"+id,"DELETE",null,null),unused->history())).show();});item.addView(remove);
             }
-            historyOffset += items.length();
-            if (historyOffset < result.getInt("total")) {
-                Button more = button(t("more"), () -> {}); more.setOnClickListener(v -> { if (!busy) { content.removeView(more); loadEntries(); } });
-            }
-            button(t("back_dashboard"), this::dashboard);
+            historyOffset+=items.length();
+            if(historyOffset<result.getInt("total")){Button more=button(t("more"),()->{});more.setOnClickListener(v->{if(!busy){content.removeView(more);loadEntries();}});}
         });
     }
     private Spinner select(String key, ArrayList<String> labels, int selected) {
@@ -284,7 +342,7 @@ public final class MainActivity extends Activity {
         spinner.setId(View.generateViewId()); caption.setLabelFor(spinner.getId());
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinner.setAdapter(adapter); spinner.setSelection(Math.max(0, selected)); content.addView(spinner); return spinner;
+        spinner.setAdapter(adapter); spinner.setSelection(Math.max(0, selected)); spinner.setBackground(Ui.dropdown(this)); spinner.setPadding(dp(12),dp(8),dp(38),dp(8)); content.addView(spinner,new LinearLayout.LayoutParams(-1,dp(56))); return spinner;
     }
     private String searchKey(String value) {
         return java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKD)
@@ -323,14 +381,14 @@ public final class MainActivity extends Activity {
                 JSONObject option = visible.get(position); target.setText(option.optString("label")); target.setTag(option.optString("id")); dialog.dismiss();
             });
             dialog.show();
-        } catch (Exception error) { status.setText(t("invalid_input")); }
+        } catch (Exception error) { setStatus(t("invalid_input")); }
     }
     private void settings() {
-        page = "settings"; screen(t("my_preferences")); button(t("back"), this::dashboard);
+        page = "settings"; screen(t("my_preferences"));
         perform(() -> new JSONObject().put("prefs", get("/settings")).put("catalog", get("/config")), value -> {
             JSONObject result = (JSONObject)value, prefs = result.getJSONObject("prefs"); catalog = result.getJSONObject("catalog");
             setLanguage(prefs.getString("language"));
-            screen(t("my_preferences")); button(t("back"), this::dashboard); button(t("refresh"), this::settings);
+            screen(t("my_preferences")); text(t("preferences_intro"),14); text(t("regional_preferences"),20);
             ArrayList<String> languageCodes = new ArrayList<>(), languageLabels = new ArrayList<>();
             JSONArray languages = catalog.getJSONArray("languages");
             for (int i = 0; i < languages.length(); i++) { JSONObject item = languages.getJSONObject(i); languageCodes.add(item.getString("code")); languageLabels.add(item.getString("name")); }
@@ -338,6 +396,7 @@ public final class MainActivity extends Activity {
             ArrayList<String> codes = new ArrayList<>(), labels = new ArrayList<>(); JSONArray currencies = catalog.getJSONArray("currencies");
             for (int i = 0; i < currencies.length(); i++) { JSONObject item = currencies.getJSONObject(i); codes.add(item.getString("code")); labels.add(item.getString("code") + " — " + item.getString("name")); }
             Spinner currency = select("currency", labels, codes.indexOf(prefs.getString("currency")));
+            text(t("price_preferences"),20);
             EditText price = input(t("pack_price"), prefs.getString("pack_price"), InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
             TextView hint = text(t("currency_price_hint", prefs.getString("currency")), 13);
             final String[] previousCurrency = {prefs.getString("currency")};
@@ -351,6 +410,7 @@ public final class MainActivity extends Activity {
             });
             EditText size = input(t("pack_size"), prefs.getString("pack_size"), InputType.TYPE_CLASS_NUMBER);
             EditText target = input(t("daily_target"), prefs.getString("daily_target"), InputType.TYPE_CLASS_NUMBER);
+            text(t("time_preferences"),20);
             TextView zoneLabel = text(t("timezone"), 14);
             Button timezone = button(prefs.getJSONObject("timezone_info").getString("label"), () -> {}); timezone.setTag(prefs.getString("timezone")); timezone.setId(View.generateViewId()); zoneLabel.setLabelFor(timezone.getId());
             timezone.setOnClickListener(v -> { if (!busy) timezonePicker(timezone); });
@@ -373,9 +433,16 @@ public final class MainActivity extends Activity {
                     perform(() -> api("/settings", "PUT", changes, null), saved -> {
                         setLanguage(((JSONObject)saved).getString("language")); Toast.makeText(this, t("settings_saved"), Toast.LENGTH_SHORT).show(); dashboard();
                     });
-                } catch (Exception e) { status.setText(t("invalid_input")); }
+                } catch (Exception e) { setStatus(t("invalid_input")); }
             });
-            button(t("back"), this::dashboard);
+            text(t("sync_preferences"),20);
+            text(t(PushSync.state(this).getString("status","push_disabled")),14);
+            button(t("sync_permissions"),()->PushSync.permissions(this));
+            if(PushSync.enabled(this))button(t("push_disable"),()->{PushSync.disable(this);settings();});
+            else button(t("push_enable"),()->{PushSync.enable(this);settings();});
+            button(t("widget_add_home"),()->{android.appwidget.AppWidgetManager manager=android.appwidget.AppWidgetManager.getInstance(this);if(manager.isRequestPinAppWidgetSupported())manager.requestPinAppWidget(new android.content.ComponentName(this,CounterWidget.class),null,null);else Toast.makeText(this,t("widget_pin_help"),Toast.LENGTH_LONG).show();});
+            text(t("account_preferences"),20);text(server,13);
+            button(t("logout"),()->perform(()->api("/auth/logout","POST",null,null),unused->{token="";pendingKey=null;pendingPayload=null;snapshot=null;TokenStore.clear(this);login();}));
         });
     }
 }

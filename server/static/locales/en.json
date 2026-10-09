@@ -176,5 +176,21 @@
   "sync_notification_title": "Stop Clop synchronization",
   "sync_notification_body": "Keeping your home-screen counter up to date",
   "sync_background_blocked": "Open Stop Clop to resume synchronization.",
-  "sync_reconnecting": "Widget synchronization: reconnecting…"
+  "sync_reconnecting": "Widget synchronization: reconnecting…",
+  "nav_today": "Today",
+  "nav_analysis": "Insights",
+  "spent_today": "Spent today",
+  "week_at_glance": "Your last 7 days",
+  "explore_analysis": "Explore your insights →",
+  "short_days": "{0} days",
+  "chart_accessibility": "Daily chart. Tap a day, use the day buttons or open daily figures to explore the values.",
+  "previous_day": "← Previous day",
+  "next_day": "Next day →",
+  "preferences_intro": "Make this space yours. Preferences are shared across your devices.",
+  "regional_preferences": "Language & currency",
+  "price_preferences": "Your cigarettes",
+  "time_preferences": "Your time zone",
+  "sync_preferences": "Widget & synchronization",
+  "account_preferences": "Your account",
+  "choose_datetime": "Choose date & time"
 }

@@ -176,5 +176,21 @@
   "sync_notification_title": "Synchronisation Stop Clop",
   "sync_notification_body": "Actualisation du compteur sur l’écran d’accueil",
   "sync_background_blocked": "Ouvrez Stop Clop pour reprendre la synchronisation.",
-  "sync_reconnecting": "Synchronisation du widget : reconnexion…"
+  "sync_reconnecting": "Synchronisation du widget : reconnexion…",
+  "nav_today": "Aujourd’hui",
+  "nav_analysis": "Analyses",
+  "spent_today": "Dépensé aujourd’hui",
+  "week_at_glance": "Vos 7 derniers jours",
+  "explore_analysis": "Explorer vos analyses →",
+  "short_days": "{0} jours",
+  "chart_accessibility": "Graphique journalier. Touchez une journée, utilisez les boutons de navigation ou ouvrez les chiffres détaillés pour consulter les valeurs.",
+  "previous_day": "← Jour précédent",
+  "next_day": "Jour suivant →",
+  "preferences_intro": "Un espace à votre image. Vos préférences sont partagées entre vos appareils.",
+  "regional_preferences": "Langue et devise",
+  "price_preferences": "Vos cigarettes",
+  "time_preferences": "Votre fuseau horaire",
+  "sync_preferences": "Widget et synchronisation",
+  "account_preferences": "Votre compte",
+  "choose_datetime": "Choisir la date et l’heure"
 }

@@ -176,5 +176,21 @@
   "sync_notification_title": "Stop Clop の同期",
   "sync_notification_body": "ホーム画面のカウンターを更新しています",
   "sync_background_blocked": "Stop Clop を開いて同期を再開してください。",
-  "sync_reconnecting": "ウィジェット同期：再接続中…"
+  "sync_reconnecting": "ウィジェット同期：再接続中…",
+  "nav_today": "今日",
+  "nav_analysis": "分析",
+  "spent_today": "今日の支出",
+  "week_at_glance": "直近7日間",
+  "explore_analysis": "詳しい分析を見る →",
+  "short_days": "{0}日間",
+  "chart_accessibility": "日別グラフ。日付をタップするか、日付ボタンまたは日別の数値から詳細を確認できます。",
+  "previous_day": "← 前の日",
+  "next_day": "次の日 →",
+  "preferences_intro": "自分に合った設定に。設定はすべての端末で共有されます。",
+  "regional_preferences": "言語と通貨",
+  "price_preferences": "たばこの設定",
+  "time_preferences": "タイムゾーン",
+  "sync_preferences": "ウィジェットと同期",
+  "account_preferences": "アカウント",
+  "choose_datetime": "日時を選択"
 }

@@ -80,6 +80,10 @@ Au démarrage, une migration additive conserve les comptes, clés, tarifs et con
 
 Projet Java natif dans [`android/`](android/), compatible Android 8.0 et versions ultérieures. Il permet l’inscription, la connexion, le +1, la saisie rétroactive, les statistiques sur 7/30/90 jours, l’historique, la suppression et les réglages. La gestion des clés API et l’export CSV se font sur le web.
 
+La navigation inférieure donne accès à **Aujourd’hui**, **Analyses**, **Historique** et **Réglages**. Le tableau de bord présente le compteur, le +1, le coût du jour et un aperçu graphique des sept derniers jours. Les analyses proposent un histogramme des quantités et une courbe des coûts, la moyenne en pointillés, les écarts journaliers et la comparaison avec la période précédente. Choisir une devise ne convertit pas les anciennes dépenses. Toucher le graphique ou utiliser les boutons de journée affiche les valeurs exactes ; la liste des chiffres journaliers fournit une alternative textuelle accessible. Les réglages regroupent langue, devise, prix, fuseau, widget, synchronisation et compte. La saisie rétroactive possède un sélecteur de date et d’heure.
+
+Aperçus sur un compte de démonstration : [tableau de bord](docs/screenshots/android-today.png), [analyses](docs/screenshots/android-analysis.png).
+
 Prérequis : JDK 17, Android SDK Platform 36 et Build Tools 35.0.0. Gradle 8.13 est téléchargé par le wrapper avec vérification SHA-256. Android Gradle Plugin est fixé à 8.13.2. Le projet peut aussi s’ouvrir dans Android Studio. [Compatibilité officielle AGP 8.13](https://developer.android.com/build/releases/agp-8-13-0-release-notes).
 
 ```sh
@@ -96,7 +100,7 @@ La connexion réseau est nécessaire. En cas de réponse réseau incertaine, ré
 
 ### Widget sur l’écran d’accueil
 
-Après connexion, toucher **Add home screen widget** (**Ajouter le widget à l’écran d’accueil**) dans l’application, ou ouvrir le catalogue de widgets du lanceur Android et sélectionner Stop Clop. Le widget occupe une ligne (4 × 1 cellules par défaut), redimensionnable horizontalement.
+Après connexion, toucher **Add home screen widget** (**Ajouter le widget à l’écran d’accueil**) dans **Réglages → Widget et synchronisation**, ou ouvrir le catalogue de widgets du lanceur Android et sélectionner Stop Clop. Le widget occupe une ligne (4 × 1 cellules par défaut), redimensionnable horizontalement.
 
 - **+1** ajoute une cigarette au compte connecté et recharge le compteur du jour dans le fuseau du compte.
 - Toucher le compteur le rafraîchit ; le bouton à gauche ouvre l’application.
