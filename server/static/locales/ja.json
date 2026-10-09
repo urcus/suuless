@@ -166,10 +166,15 @@
   "push_invalid_endpoint": "アプリに表示されたntfyサーバーを選択し、同期を再度有効にしてください。",
   "push_limit": "プッシュセッションが多すぎます。不要なセッションを取り消してください。",
   "push_disabled": "ウィジェット同期：定期更新のみ",
-  "push_registering": "ウィジェット同期：登録中…",
+  "push_registering": "ウィジェット同期：接続中…",
   "push_registration_failed": "同期に失敗しました。ntfyを確認して再度有効にしてください。",
-  "push_active": "ウィジェット同期：プッシュ有効",
+  "push_active": "ウィジェット同期：接続済み",
   "push_enable": "ウィジェット同期を有効にする",
   "push_disable": "ウィジェット同期を無効にする",
-  "push_setup": "ntfyをインストールし、設定で{0}を既定のサーバーにして、バックグラウンド動作を許可してください。その後、ここで同期を有効にします。プッシュメッセージはカウンターの更新のみを要求します。"
+  "push_setup": "Stop Clop アカウントで自動的に同期します。画面がオフの間もウィジェットを更新するには、通知とバッテリーの使用制限解除を許可してください。常駐通知からいつでも同期を停止できます。",
+  "sync_permissions": "バックグラウンドの権限",
+  "sync_notification_title": "Stop Clop の同期",
+  "sync_notification_body": "ホーム画面のカウンターを更新しています",
+  "sync_background_blocked": "Stop Clop を開いて同期を再開してください。",
+  "sync_reconnecting": "ウィジェット同期：再接続中…"
 }

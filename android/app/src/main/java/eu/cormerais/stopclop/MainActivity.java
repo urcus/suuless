@@ -49,8 +49,13 @@ public final class MainActivity extends Activity {
         setLanguage(getPreferences(MODE_PRIVATE).getString("language", "en"));
         server = getPreferences(MODE_PRIVATE).getString("server", ""); token = TokenStore.load(this);
         if (state != null) { pendingKey = state.getString("pendingKey"); pendingPayload = state.getString("pendingPayload"); }
-        if (token.isEmpty()) login(); else { PushSync.renew(this); dashboard(); }
+        if (token.isEmpty()) login(); else { dashboard(); }
     }
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] results){
+        super.onRequestPermissionsResult(requestCode,permissions,results);
+        if(requestCode==7042)PushSync.requestBattery(this);
+    }
+    @Override protected void onResume(){super.onResume();PushSync.renew(this);}
     @Override protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out); out.putString("pendingKey", pendingKey); out.putString("pendingPayload", pendingPayload);
     }
@@ -183,7 +188,7 @@ public final class MainActivity extends Activity {
             LocalDate end = LocalDate.parse(prefs.getString("local_today")); localNow = prefs.getString("local_datetime"); rangeEnd = end.toString(); rangeStart = end.minusDays(days - 1).toString();
             catalog = get("/config");
             JSONObject push;
-            try { push=get("/push"); } catch(ApiClient.HttpError error) { if(error.status!=404)throw error; push=new JSONObject().put("enabled",false); }
+            try { push=get("/sync/config"); push.put("enabled",true); } catch(ApiClient.HttpError error) { if(error.status!=404)throw error; push=new JSONObject().put("enabled",false); }
             return new JSONObject().put("push",push).put("settings", prefs).put("stats", get("/stats" + range()));
         }, value -> {
             JSONObject bundle = (JSONObject)value, stats = bundle.getJSONObject("stats"), today = stats.getJSONObject("today"), period = stats.getJSONObject("period"), total = stats.getJSONObject("total");
@@ -204,12 +209,12 @@ public final class MainActivity extends Activity {
             button(t("history_daily"), this::history);
             button(t("settings"), this::settings);
             if(bundle.getJSONObject("push").optBoolean("enabled")) {
-                JSONObject push=bundle.getJSONObject("push");
+                PushSync.automatic(this);
                 text(t(PushSync.state(this).getString("status","push_disabled")),14);
-                button(t("push_enable"), () -> new AlertDialog.Builder(this).setTitle(t("push_enable"))
-                    .setMessage(t("push_setup",push.optString("server")))
-                    .setPositiveButton(t("push_enable"),(dialog,which)->PushSync.enable(this)).setNegativeButton(t("cancel"),null).show());
-                if(PushSync.enabled(this))button(t("push_disable"),()->perform(()->api("/push","DELETE",null,null),unused->{PushSync.disable(this);dashboard();}));
+                if(PushSync.enabled(this)){
+                    button(t("sync_permissions"),()->PushSync.permissions(this));
+                    button(t("push_disable"),()->{PushSync.disable(this);dashboard();});
+                }else button(t("push_enable"),()->{PushSync.enable(this);dashboard();});
             }
             button(t("widget_add_home"), () -> {
                 android.appwidget.AppWidgetManager manager=android.appwidget.AppWidgetManager.getInstance(this);

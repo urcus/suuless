@@ -166,10 +166,15 @@
   "push_invalid_endpoint": "Choisir le serveur ntfy indiqué dans l’application, puis réactiver la synchronisation.",
   "push_limit": "Trop de sessions push enregistrées. Révoquer les sessions inutilisées.",
   "push_disabled": "Synchronisation du widget : périodique uniquement",
-  "push_registering": "Synchronisation du widget : inscription…",
+  "push_registering": "Synchronisation du widget : connexion…",
   "push_registration_failed": "Échec de synchronisation. Vérifier ntfy puis réactiver la synchronisation.",
-  "push_active": "Synchronisation du widget : push actif",
+  "push_active": "Synchronisation du widget : connecté",
   "push_enable": "Activer la synchronisation du widget",
   "push_disable": "Désactiver la synchronisation du widget",
-  "push_setup": "Installer ntfy, choisir {0} comme serveur par défaut dans ses réglages et autoriser son fonctionnement en arrière-plan. Activer ensuite la synchronisation ici. Les messages push demandent uniquement un rafraîchissement du compteur."
+  "push_setup": "La synchronisation utilise automatiquement votre compte Stop Clop. Autorisez les notifications et le fonctionnement sans restriction de batterie pour actualiser le widget écran éteint. Une notification permanente permet de l’arrêter à tout moment.",
+  "sync_permissions": "Autorisations en arrière-plan",
+  "sync_notification_title": "Synchronisation Stop Clop",
+  "sync_notification_body": "Actualisation du compteur sur l’écran d’accueil",
+  "sync_background_blocked": "Ouvrez Stop Clop pour reprendre la synchronisation.",
+  "sync_reconnecting": "Synchronisation du widget : reconnexion…"
 }

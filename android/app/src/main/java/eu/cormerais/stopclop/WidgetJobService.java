@@ -37,7 +37,6 @@ public final class WidgetJobService extends JobService {
         String server=CounterWidget.server(this),token=TokenStore.load(this),language=CounterWidget.language(this);
         SharedPreferences prefs=CounterWidget.state(this);boolean saved=false;
         try{
-            PushSync.upload(this,server,token,language);
             String key=prefs.getString("pending_key","");
             if(add&&!key.isEmpty()){
                 prefs.edit().putLong("busy_until",System.currentTimeMillis()+60000).commit();CounterWidget.render(this);

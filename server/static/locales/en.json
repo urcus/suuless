@@ -166,10 +166,15 @@
   "push_invalid_endpoint": "Choose the ntfy server shown in the app, then enable synchronization again.",
   "push_limit": "Too many registered push sessions. Revoke unused sessions first.",
   "push_disabled": "Widget synchronization: periodic only",
-  "push_registering": "Widget synchronization: registering…",
+  "push_registering": "Widget synchronization: connecting…",
   "push_registration_failed": "Widget synchronization failed. Check ntfy and enable it again.",
-  "push_active": "Widget synchronization: push active",
+  "push_active": "Widget synchronization: connected",
   "push_enable": "Enable widget synchronization",
   "push_disable": "Disable widget synchronization",
-  "push_setup": "Install ntfy, select {0} as its default server in ntfy settings, and allow it to run in the background. Then enable synchronization here. Push messages only request a counter refresh."
+  "push_setup": "Synchronization uses your Stop Clop account automatically. Allow notifications and unrestricted battery use to keep the widget updated while the screen is off. A persistent notification lets you stop synchronization at any time.",
+  "sync_permissions": "Background permissions",
+  "sync_notification_title": "Stop Clop synchronization",
+  "sync_notification_body": "Keeping your home-screen counter up to date",
+  "sync_background_blocked": "Open Stop Clop to resume synchronization.",
+  "sync_reconnecting": "Widget synchronization: reconnecting…"
 }

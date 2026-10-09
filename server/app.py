@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import sqlite3
+import threading
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from babel.numbers import get_currency_precision
@@ -14,10 +15,11 @@ from pathlib import Path
 from .timezones import (VALID_TIMEZONES, ALIASES, TZDATA_VERSION, get_zone,
                         canonical_timezone, timezone_catalog, timezone_info)
 
+from .sync import SCHEMA as SYNC_SCHEMA, events
 from .analysis import analyze
 from .push import SCHEMA as PUSH_SCHEMA, queue_refresh, topic_for
 
-from flask import Flask, g, jsonify, request, send_from_directory
+from flask import Flask, Response, g, jsonify, request, send_from_directory
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -86,7 +88,7 @@ def create_app(config=None):
         app.config.update(config)
     Path(app.config['DATABASE']).parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(app.config['DATABASE'])) as conn:
-        conn.executescript(SCHEMA + PUSH_SCHEMA)
+        conn.executescript(SCHEMA + PUSH_SCHEMA + SYNC_SCHEMA)
         # Serialize additive migrations across Gunicorn workers; preserve existing EUR data.
         conn.execute('BEGIN IMMEDIATE')
         try:
@@ -263,6 +265,37 @@ def create_app(config=None):
         if not deleted:
             fail('key_not_found', 404)
         return '', 204
+
+    # Bound streaming requests per worker, reserving threads for ordinary API calls.
+    sync_slots = threading.BoundedSemaphore(16)
+
+    @app.get('/api/sync/config')
+    def sync_config():
+        return jsonify(transport='sse', path='/api/sync/events')
+
+    @app.get('/api/sync/events')
+    def sync_events():
+        cursor = request.headers.get('Last-Event-ID', '')
+        if cursor and not re.fullmatch('[0-9a-f]{32}', cursor):
+            fail('invalid_input')
+        if not sync_slots.acquire(blocking=False):
+            return jsonify(error='Synchronization capacity reached'), 503, {'Retry-After': '30'}
+        stream = events(app.config['DATABASE'], g.token['id'], g.user['id'], g.token['digest'], cursor)
+        released = False
+        def release():
+            nonlocal released
+            if not released:
+                released = True
+                sync_slots.release()
+        def generate():
+            try:
+                yield from stream
+            finally:
+                stream.close()
+                release()
+        response = Response(generate(), mimetype='text/event-stream', headers={'X-Accel-Buffering': 'no'})
+        response.call_on_close(release)
+        return response
 
     @app.route('/api/push', methods=['GET', 'PUT', 'DELETE'])
     def push_subscription():

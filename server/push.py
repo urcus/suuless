@@ -1,5 +1,6 @@
 """Per-session UnifiedPush subscriptions and a durable, coalescing refresh outbox."""
 import re
+from .sync import changed
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -33,6 +34,7 @@ def topic_for(endpoint, public_url):
 
 
 def queue_refresh(conn, user_id):
+    changed(conn, user_id)
     # Called in the same transaction as the change. No network on the request path.
     for row in conn.execute('SELECT s.token_id FROM push_subscriptions s JOIN tokens t ON t.id=s.token_id WHERE t.user_id=?', (user_id,)).fetchall():
         conn.execute('''INSERT INTO push_outbox(token_id) VALUES (?)
