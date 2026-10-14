@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![API: OpenAPI](https://img.shields.io/badge/API-OpenAPI-blue.svg)](docs/api/README.md)
 
-SuuLess (スーレス in Japanese, formerly Stop Clop) is a self-hosted cigarette consumption tracker. Its web interface, native Android app and Stream Deck API share the same history, with separate user accounts. The interface supports English, French and Japanese. Data stays in a SQLite database on your server.
+SuuLess is a self-hosted cigarette consumption tracker. Its web interface, native Android app and Stream Deck API share the same history, with separate user accounts. The interface supports English, French and Japanese. Data stays in a SQLite database on your server.
 
 ## Features
 
