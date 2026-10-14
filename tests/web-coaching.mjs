@@ -1,0 +1,44 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+const base=process.env.BASE_URL||'http://127.0.0.1:8080';
+const browser=await chromium.launch({headless:true}),context=await browser.newContext(),page=await context.newPage();
+const errors=[];page.on('pageerror',e=>errors.push(e.message));
+try{
+ const auth=await(await context.request.post(base+'/api/auth/register',{data:{username:`coaching-${Date.now()}`,password:'coaching-test-password',timezone:'UTC'}})).json();
+ const headers={Authorization:`Bearer ${auth.token}`};
+ const prefs=await(await context.request.get(base+'/api/settings',{headers})).json();
+ const date=offset=>{const d=new Date(prefs.local_today+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+offset);return d.toISOString().slice(0,10);};
+ await context.request.post(base+'/api/cigarettes',{headers,data:{quantity:10,occurred_at:date(-8)+'T12:00:00Z',trigger:'coffee'}});
+ await page.goto(base);await page.evaluate(token=>sessionStorage.setItem('stop-clop-token',token),auth.token);await page.reload();
+ await page.locator('[data-view=journey]').click();
+ await page.locator('#journey-zero').getByText('0 completed days').waitFor();
+ await page.locator('[data-view=journey]').click();await page.locator('#journey details').first().locator('summary').click();
+ await page.locator('#journey-mode').selectOption('reduce');await page.locator('#journey-goal-input').fill('6');await page.locator('[data-view=journey]').click();await page.locator('#journey-motivation').fill('For myself');
+ await page.locator('#add-step').click();await page.locator('[data-field=date]').fill(date(1));await page.locator('[data-field=goal]').fill('4');
+ await page.locator('#journey-form button[type=submit], #journey-form button:not([type])').click();
+ await page.waitForFunction(()=>document.querySelector('#journey-goal').textContent.includes('6'));
+ const saved=await(await context.request.get(base+'/api/coaching',{headers})).json();assert.equal(saved.plan.steps[0].goal,4);
+ await page.locator('#baseline-start').fill(date(-8));await page.locator('#baseline-end').fill(date(-7));await page.locator('#baseline-form button').click();
+ await page.waitForFunction(()=>document.querySelector('#baseline-form').hidden);
+ await page.locator('[data-view=today]').click();await page.locator('#checkin-day').selectOption(date(-1));await page.locator('#confirm-day').click();
+ await page.waitForFunction(()=>document.querySelector('#journey-zero').textContent.includes('1 completed day'));
+ assert.match(await page.locator('#progress-summary').textContent(),/5 fewer/);
+ await page.locator('[data-view=today]').click();await page.locator('#open-craving').click();await page.locator('#craving-trigger').selectOption('stress');await page.locator('#craving-strategy').selectOption('water');await page.locator('#craving-form button').click();
+ await page.locator('#craving-active').waitFor({state:'visible'});assert.match(await page.locator('#craving-activity').textContent(),/water/);
+ await page.locator('#craving-passed').click();await page.waitForFunction(()=>document.querySelector('#journey-passed').textContent.includes('1 urges'));
+ await page.locator('[data-view=today]').click();await page.locator('#open-craving').click();await page.locator('#craving-form button').click();await page.locator('#craving-active').waitFor({state:'visible'});await page.locator('#craving-smoked').click();
+ await page.waitForFunction(()=>document.querySelector('#today-count').textContent==='1');assert.match(await page.locator('#journey-zero').textContent(),/1 completed day/);
+ // Updating another device must not silently overwrite an unsaved plan.
+ await page.locator('[data-view=journey]').click();await page.locator('#journey-motivation').fill('Unsubmitted edit');
+ const current=await(await context.request.get(base+'/api/coaching',{headers})).json();await context.request.put(base+'/api/coaching/plan',{headers,data:{version:current.plan.version,reason:'Other device'}});
+ await page.locator('#refresh').click();await page.waitForFunction(()=>document.querySelector('#journey-reason').textContent==='Other device');assert.equal(await page.locator('#journey-motivation').inputValue(),'Unsubmitted edit');
+ await page.locator('#journey-form button:not([type])').click();await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('another device'));
+ await page.locator('[data-view=journey]').click();await page.locator('#reload-journey').click();await page.waitForFunction(()=>document.querySelector('#journey-motivation').value==='Other device');
+ await page.locator('#journey-mode').selectOption('quit');await page.locator('#journey-quit').fill(date(0));await page.locator('#journey-form button:not([type])').click();await page.waitForFunction(()=>document.querySelector('#journey-clock').textContent.includes('Since'));
+ await page.locator('#header-language').selectOption('fr');await page.waitForFunction(()=>document.querySelector('#journey-mode-label').textContent==='Préparer ou maintenir mon arrêt');
+ await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ await page.locator('[data-view=journey]').click();await page.locator('#journey').screenshot({path:'test-results/coaching-mobile.png'});
+ await page.locator('[data-view=journey]').click();await page.locator('#journey details').last().locator('summary').click();
+ const downloadPromise=page.waitForEvent('download');await page.locator('#progress-export').click();const download=await downloadPromise;assert.equal(download.suggestedFilename(),'suuless-progress.csv');
+ assert.deepEqual(errors,[]);console.log('Coaching web OK: plan, steps, baseline, confirmations, cravings, progress retained, conflicts, quit mode, French, mobile and export.');
+}finally{await browser.close();}

@@ -42,7 +42,7 @@ class ReleaseTest(unittest.TestCase):
         android.mkdir(parents=True)
         sums = []
         for kind in ['debug', 'release-unsigned']:
-            name = f'stop-clop-1.2.3-{kind}.apk'
+            name = f'suuless-1.2.3-{kind}.apk'
             content = kind.encode()
             (android / name).write_bytes(content)
             sums.append(f'{hashlib.sha256(content).hexdigest()}  ./{name}\n')
@@ -52,9 +52,9 @@ class ReleaseTest(unittest.TestCase):
         (self.root / 'signature-verification.json').write_text(json.dumps([{'critical': {'image': {'docker-manifest-digest': digest}}}]))
         self.env = dict(CI_COMMIT_TAG='v1.2.3', CI_COMMIT_REF_PROTECTED='true', CI_PIPELINE_IID='123',
                         CI_COMMIT_SHA='abc123', CI_PIPELINE_URL='https://gitlab.example/pipelines/123',
-                        STOP_CLOP_IMAGE_NAME='harbor.example/project/stop-clop:1.2.3',
-                        STOP_CLOP_IMAGE_REF='harbor.example/project/stop-clop@'+digest,
-                        STOP_CLOP_IMAGE_DIGEST=digest)
+                        SUULESS_IMAGE_NAME='harbor.example/project/suuless:1.2.3',
+                        SUULESS_IMAGE_REF='harbor.example/project/suuless@'+digest,
+                        SUULESS_IMAGE_DIGEST=digest)
         self.client = FakeGitLab()
 
     def test_create_and_retry_release(self):
@@ -63,8 +63,9 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(len(self.client.files), 6)
         self.assertEqual(len(self.client.links), 6)
         self.assertEqual(self.client.release['tag_name'], 'v1.2.3')
-        self.assertTrue(all('/packages/generic/stop-clop/1.2.3-123/' in link['url'] for link in self.client.links))
+        self.assertTrue(all('/packages/generic/suuless/1.2.3-123/' in link['url'] for link in self.client.links))
         self.assertIn('non signé', self.client.release['description'])
+        self.assertIn('versionCode: `1001002003`', self.client.release['description'])
         checksums = next(content for path,content in self.client.files.items() if path.endswith('/SHA256SUMS'))
         self.assertEqual(len(checksums.splitlines()), 5)
 
@@ -75,7 +76,7 @@ class ReleaseTest(unittest.TestCase):
         self.assertFalse(self.client.files)
 
     def test_verify_inputs_before_upload(self):
-        (self.root/'dist/android/stop-clop-1.2.3-debug.apk').write_bytes(b'corrupt')
+        (self.root/'dist/android/suuless-1.2.3-debug.apk').write_bytes(b'corrupt')
         with self.assertRaises(ValueError): publish(self.env, self.root, self.client)
         self.assertFalse(self.client.files)
 

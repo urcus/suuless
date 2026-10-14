@@ -39,5 +39,5 @@ final class TokenStore {
             return new String(cipher.doFinal(Base64.decode(parts[1], Base64.NO_WRAP)), StandardCharsets.UTF_8);
         } catch (Exception error) { clear(context); return ""; }
     }
-    static void clear(Context context) { context.getSharedPreferences("session", Context.MODE_PRIVATE).edit().remove("token").apply(); }
+    static void clear(Context context) { ReminderJobService.cancel(context); context.getSharedPreferences("session", Context.MODE_PRIVATE).edit().remove("token").apply(); }
 }

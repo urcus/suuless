@@ -1,4 +1,5 @@
-"""Stop Clop: one SQLite database, strictly user-scoped resources."""
+"""SuuLess: one SQLite database, strictly user-scoped resources."""
+import click
 from contextlib import closing
 import csv
 import hashlib
@@ -15,8 +16,12 @@ from pathlib import Path
 from .timezones import (VALID_TIMEZONES, ALIASES, TZDATA_VERSION, get_zone,
                         canonical_timezone, timezone_catalog, timezone_info)
 
+from .accounts import SCHEMA as ACCOUNT_SCHEMA, PUBLIC_PATHS, register_routes as register_account_routes, mail_config, email_address, environment_mail_config
+
 from .sync import SCHEMA as SYNC_SCHEMA, events
 from .analysis import analyze, habits
+from .coaching import (SCHEMA as COACHING_SCHEMA, TRIGGERS, invalidate_checkins,
+                       reminder_preferences, register_routes, plan_for, goal_for)
 from .push import SCHEMA as PUSH_SCHEMA, queue_refresh, topic_for
 
 from flask import Flask, Response, g, jsonify, request, send_from_directory
@@ -33,6 +38,12 @@ CREATE TABLE IF NOT EXISTS users (
  id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
  pack_price_cents INTEGER NOT NULL DEFAULT 1200, pack_size INTEGER NOT NULL DEFAULT 20,
  timezone TEXT NOT NULL DEFAULT 'Europe/Paris', daily_target INTEGER NOT NULL DEFAULT 10
+);
+CREATE TABLE IF NOT EXISTS account_sequence (
+ id INTEGER PRIMARY KEY CHECK(id=1), last_id INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS installation_state (
+ id INTEGER PRIMARY KEY CHECK(id=1), initial_account_handled INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS tokens (
  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
@@ -77,22 +88,53 @@ def body():
     return data
 
 
+def initialize_account(conn, config):
+    """Run inside the startup transaction, once per installation, across workers."""
+    if conn.execute('SELECT 1 FROM installation_state WHERE id=1').fetchone():
+        return
+    # Existing installations (including deleted accounts) must not be reprovisioned.
+    if conn.execute('SELECT last_id FROM account_sequence WHERE id=1').fetchone()[0] > 0:
+        conn.execute('INSERT INTO installation_state VALUES(1,1)')
+        return
+    username, password = config['ADMIN_USERNAME'], config['ADMIN_PASSWORD']
+    if username == '' and password == '':
+        return
+    if not isinstance(username, str) or not re.fullmatch(r'[a-zA-Z0-9_.-]{3,40}', username):
+        raise ValueError('ADMIN_USERNAME must contain 3–40 letters, digits, underscores, dots or hyphens')
+    if not isinstance(password, str) or not 12 <= len(password) <= 256:
+        raise ValueError('ADMIN_PASSWORD must contain 12–256 characters')
+    user_id = conn.execute('UPDATE account_sequence SET last_id=last_id+1 WHERE id=1 RETURNING last_id').fetchone()[0]
+    conn.execute("INSERT INTO users(id,username,password_hash,role) VALUES(?,?,?,'admin')",
+                 (user_id, username.lower(), generate_password_hash(password)))
+    conn.execute('INSERT INTO installation_state VALUES(1,1)')
+
+
 def create_app(config=None):
     app = Flask(__name__, static_folder='static', static_url_path='/static')
     app.config.update(DATABASE=os.environ.get('DATABASE', 'data/stopclop.db'),
                       ALLOW_REGISTRATION=os.environ.get('ALLOW_REGISTRATION', 'true').lower() == 'true',
+                      ADMIN_USERNAME=os.environ.get('ADMIN_USERNAME', ''),
+                      ADMIN_PASSWORD=os.environ.get('ADMIN_PASSWORD', ''),
                       MAX_CONTENT_LENGTH=16 * 1024,
                       PUSH_PUBLIC_URL=os.environ.get('PUSH_PUBLIC_URL', ''),
                       PUSH_INTERNAL_URL=os.environ.get('PUSH_INTERNAL_URL', ''))
     if config:
         app.config.update(config)
+    app.config['SMTP_ENV_CONFIG'] = environment_mail_config()
     Path(app.config['DATABASE']).parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(app.config['DATABASE'])) as conn:
-        conn.executescript(SCHEMA + PUSH_SCHEMA + SYNC_SCHEMA)
+        conn.executescript(SCHEMA + PUSH_SCHEMA + SYNC_SCHEMA + COACHING_SCHEMA + ACCOUNT_SCHEMA)
         # Serialize additive migrations across Gunicorn workers; preserve existing EUR data.
         conn.execute('BEGIN IMMEDIATE')
         try:
             columns = {row[1] for row in conn.execute('PRAGMA table_info(users)')}
+            adding_roles = 'role' not in columns
+            for column, definition in [('role', "TEXT NOT NULL DEFAULT 'user'"), ('active', 'INTEGER NOT NULL DEFAULT 1'), ('suspended', 'INTEGER NOT NULL DEFAULT 0'), ('email', 'TEXT'), ('email_verified', 'INTEGER NOT NULL DEFAULT 0')]:
+                if column not in columns:
+                    conn.execute(f'ALTER TABLE users ADD COLUMN {column} {definition}')
+            conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email)')
+            if adding_roles and app.config['ADMIN_USERNAME']:
+                conn.execute("UPDATE users SET role='admin' WHERE username=?", (app.config['ADMIN_USERNAME'].lower(),))
             for column, definition in [('language', "TEXT NOT NULL DEFAULT 'en'"),
                                        ('currency', "TEXT NOT NULL DEFAULT 'EUR'"),
                                        ('pack_price_micros', 'INTEGER NOT NULL DEFAULT 12000000')]:
@@ -103,6 +145,18 @@ def create_app(config=None):
             columns = {row[1] for row in conn.execute('PRAGMA table_info(cigarettes)')}
             if 'currency' not in columns:
                 conn.execute("ALTER TABLE cigarettes ADD COLUMN currency TEXT NOT NULL DEFAULT 'EUR'")
+            if 'trigger' not in columns:
+                conn.execute("ALTER TABLE cigarettes ADD COLUMN trigger TEXT NOT NULL DEFAULT ''")
+            columns = {row[1] for row in conn.execute('PRAGMA table_info(tokens)')}
+            for column, definition in [('kind', "TEXT NOT NULL DEFAULT 'legacy'"),
+                                       ('client', 'TEXT'), ('created_at', 'TEXT')]:
+                if column not in columns:
+                    conn.execute(f'ALTER TABLE tokens ADD COLUMN {column} {definition}')
+            # Old sessions were always named Session, but API keys could use that name too.
+            conn.execute("UPDATE tokens SET kind='api' WHERE kind='legacy' AND name<>'Session'")
+            # Never reuse an account ID after deletion (including requests still in flight).
+            conn.execute("INSERT INTO account_sequence SELECT 1,COALESCE(MAX(id),0) FROM users WHERE true ON CONFLICT(id) DO UPDATE SET last_id=MAX(last_id,excluded.last_id)")
+            initialize_account(conn, app.config)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -139,7 +193,7 @@ def create_app(config=None):
 
     @app.before_request
     def authenticate():
-        if not request.path.startswith('/api/') or request.path in ('/api/auth/login', '/api/auth/register', '/api/config'):
+        if not request.path.startswith('/api/') or request.path in ({'/api/auth/login', '/api/auth/register', '/api/config'} | PUBLIC_PATHS):
             return
         auth = request.headers.get('Authorization', '')
         if not auth.startswith('Bearer '):
@@ -150,13 +204,28 @@ def create_app(config=None):
             fail('invalid_token', 401)
         g.token = token
         g.user = db().execute('SELECT * FROM users WHERE id=?', (token['user_id'],)).fetchone()
+        if g.user is None or not g.user['active']:
+            fail('invalid_token', 401)
+        if request.path.startswith('/api/admin/') and (g.user['role'] != 'admin' or g.token['kind'] != 'session'):
+            fail('admin_required', 403)
+        if g.user['role'] == 'admin' and not (request.path.startswith('/api/admin/') or request.path in ('/api/me', '/api/auth/logout', '/api/account/email')):
+            fail('user_space_only', 403)
+        if g.user['role'] == 'admin' and request.method == 'DELETE' and request.path == '/api/me':
+            fail('admin_protected', 403)
 
-    def issue_token(user_id, name, days):
+    def issue_token(user_id, name, days, kind="api", client=None):
         secret = secrets.token_urlsafe(32)
-        expiry = stamp(now() + timedelta(days=days))
-        cursor = db().execute('INSERT INTO tokens(user_id,digest,name,expires_at) VALUES(?,?,?,?)',
-                              (user_id, hashlib.sha256(secret.encode()).hexdigest(), name, expiry))
+        created = now()
+        expiry = stamp(created + timedelta(days=days))
+        cursor = db().execute('INSERT INTO tokens(user_id,digest,name,expires_at,kind,client,created_at) VALUES(?,?,?,?,?,?,?)',
+                              (user_id, hashlib.sha256(secret.encode()).hexdigest(), name, expiry, kind, client, stamp(created)))
         return dict(token=secret, id=cursor.lastrowid, expires_at=expiry)
+
+    def session_duration(data):
+        client = data.get('client', 'web')
+        if client not in ('web', 'android'):
+            fail('invalid_input')
+        return 30 if client == 'android' else 1
 
     def auth_limit():
         cutoff = stamp(now() - timedelta(minutes=15))
@@ -166,6 +235,23 @@ def create_app(config=None):
             if count >= 30:
                 fail('rate_limit', 429)
             db().execute('INSERT INTO auth_attempts VALUES(?,?)', (request.remote_addr, stamp(now())))
+
+    @app.cli.command('create-admin')
+    @click.option('--username', prompt=True)
+    @click.password_option()
+    def create_admin(username, password):
+        """Create a dedicated administrator on an existing installation."""
+        if not re.fullmatch(r'[a-zA-Z0-9_.-]{3,40}', username) or not 12 <= len(password) <= 256:
+            raise click.ClickException('Username: 3–40 allowed characters; password: 12–256 characters.')
+        with db():
+            db().execute('BEGIN IMMEDIATE')
+            if db().execute('SELECT 1 FROM users WHERE username=?', (username.lower(),)).fetchone():
+                raise click.ClickException('Username already exists. Choose a dedicated administrator name.')
+            uid = db().execute('UPDATE account_sequence SET last_id=last_id+1 WHERE id=1 RETURNING last_id').fetchone()[0]
+            db().execute("INSERT INTO users(id,username,password_hash,role) VALUES(?,?,?,'admin')", (uid, username.lower(), generate_password_hash(password)))
+        click.echo('Administrator created.')
+
+    deliver_account_email = register_account_routes(app, db, body, fail, now, stamp, auth_limit)
 
     @app.get('/')
     def index():
@@ -180,6 +266,7 @@ def create_app(config=None):
     def public_config():
         instant = now()
         return jsonify(registration_enabled=app.config['ALLOW_REGISTRATION'],
+                       email_required=bool(mail_config(db()).get('enabled')),
                        languages=[dict(code=code, name=name) for code, name in LANGUAGES.items()],
                        currencies=currency_catalog(language()), timezones=TIMEZONES,
                        timezone_options=timezone_catalog(language(), instant), timezone_aliases=ALIASES,
@@ -191,6 +278,7 @@ def create_app(config=None):
             fail('registration_closed', 403)
         auth_limit()
         data = body()
+        days = session_duration(data)
         username = data.get('username', '')
         password = data.get('password', '')
         if not isinstance(username, str) or not re.fullmatch(r'[a-zA-Z0-9_.-]{3,40}', username):
@@ -205,11 +293,21 @@ def create_app(config=None):
             fail('invalid_timezone')
         # New accounts may normalize browser aliases; existing accounts never auto-change.
         tz = canonical_timezone(tz) or tz
+        email_required = bool(mail_config(db()).get('enabled'))
+        email = email_address(data.get('email')) if email_required else None
+        if email_required and not email:
+            fail('invalid_email')
         try:
             with db():
-                cursor = db().execute('INSERT INTO users(username,password_hash,language,timezone) VALUES(?,?,?,?)',
-                                      (username.lower(), generate_password_hash(password), locale, tz))
-                result = issue_token(cursor.lastrowid, 'Session', 30)
+                db().execute('BEGIN IMMEDIATE')
+                user_id = db().execute('UPDATE account_sequence SET last_id=last_id+1 WHERE id=1 RETURNING last_id').fetchone()[0]
+                cursor = db().execute('INSERT INTO users(id,username,password_hash,language,timezone,email,active) VALUES(?,?,?,?,?,?,?)',
+                                      (user_id, username.lower(), generate_password_hash(password), locale, tz, email, int(not email_required)))
+                if email_required:
+                    deliver_account_email(email, 'activate', user_id, locale)
+                    result = dict(activation_required=True, message=translate('email_requested'))
+                else:
+                    result = issue_token(cursor.lastrowid, 'Session', days, 'session', data.get('client', 'web'))
         except sqlite3.IntegrityError:
             fail('username_taken', 409)
         return jsonify(result), 201
@@ -218,17 +316,18 @@ def create_app(config=None):
     def login():
         auth_limit()
         data = body()
+        days = session_duration(data)
         username, password = data.get('username', ''), data.get('password', '')
         if not isinstance(username, str) or not isinstance(password, str) or len(password) > 256:
             fail('invalid_credentials', 401)
         user = db().execute('SELECT * FROM users WHERE username=?', (username.lower(),)).fetchone()
         # Always perform the expensive password operation, including unknown accounts.
         valid = check_password_hash(user['password_hash'], password) if user else check_password_hash(app.config['DUMMY_HASH'], password)
-        if not user or not valid:
+        if not user or not valid or not user['active']:
             fail('invalid_credentials', 401)
         with db():
             db().execute('DELETE FROM tokens WHERE expires_at<?', (stamp(now()),))
-            result = issue_token(user['id'], 'Session', 30)
+            result = issue_token(user['id'], 'Session', days, 'session', data.get('client', 'web'))
         return jsonify(result)
 
     app.config['DUMMY_HASH'] = generate_password_hash(secrets.token_urlsafe(32))
@@ -241,12 +340,36 @@ def create_app(config=None):
 
     @app.get('/api/me')
     def me():
-        return jsonify(id=g.user['id'], username=g.user['username'])
+        return jsonify(id=g.user['id'], username=g.user['username'], role=g.user['role'], language=g.user['language'], email=g.user['email'], email_verified=bool(g.user['email_verified']))
+
+    @app.delete('/api/me')
+    def delete_account():
+        auth_limit()
+        data = body()
+        password = data.get('password')
+        if (data.get('confirm') is not True or not isinstance(password, str)
+                or len(password) > 256 or not check_password_hash(g.user['password_hash'], password)):
+            fail('account_delete_invalid', 400)
+        with db():
+            db().execute('BEGIN IMMEDIATE')
+            # FK order matters; token deletion also removes push subscriptions/outbox.
+            for table in ('cravings', 'checkins', 'journeys', 'cigarettes', 'tokens', 'sync_revisions'):
+                # table comes only from the fixed tuple above.
+                db().execute(f'DELETE FROM {table} WHERE user_id=?', (g.user['id'],))  # nosec B608
+            db().execute('DELETE FROM users WHERE id=?', (g.user['id'],))
+        return '', 204
 
     @app.get('/api/tokens')
     def tokens():
-        rows = db().execute('SELECT id,name,expires_at FROM tokens WHERE user_id=? ORDER BY id DESC', (g.user['id'],))
+        rows = db().execute('SELECT id,name,expires_at,kind,client,created_at FROM tokens WHERE user_id=? AND expires_at>? ORDER BY id DESC', (g.user['id'], stamp(now())))
         return jsonify([dict(row, current=row['id'] == g.token['id']) for row in rows])
+
+    @app.delete('/api/sessions/others')
+    def revoke_other_sessions():
+        with db():
+            db().execute("DELETE FROM tokens WHERE user_id=? AND kind='session' AND id<>?",
+                         (g.user['id'], g.token['id']))
+        return '', 204
 
     @app.post('/api/tokens')
     def new_token():
@@ -361,6 +484,8 @@ def create_app(config=None):
         return jsonify({**{key: g.user[key] for key in ('pack_price_cents', 'pack_size', 'daily_target', 'timezone', 'currency', 'language')},
                         'pack_price': price_string(g.user['pack_price_micros'], g.user['currency']),
                         'timezone_info': timezone_info(g.user['timezone'], g.user['language'], instant),
+                        'reminders': reminder_preferences(db(), g.user['id']),
+                        'coaching_goal': goal_for(g.user, plan_for(db(), g.user['id']), instant.astimezone(get_zone(g.user['timezone'])).date().isoformat()),
                         'local_today': instant.astimezone(get_zone(g.user['timezone'])).date().isoformat(),
                         'local_datetime': instant.astimezone(get_zone(g.user['timezone'])).isoformat()})
 
@@ -389,12 +514,15 @@ def create_app(config=None):
     def serialize(row):
         return dict(id=row['id'], occurred_at=row['occurred_at'],
                     local_datetime=datetime.fromisoformat(row['occurred_at']).astimezone(get_zone(g.user['timezone'])).isoformat(), quantity=row['quantity'],
-                    cost=money(row['quantity'] * row['unit_cost_micros'], row['currency']), currency=row['currency'], source=row['source'])
+                    cost=money(row['quantity'] * row['unit_cost_micros'], row['currency']), currency=row['currency'], source=row['source'], trigger=row['trigger'])
 
     @app.post('/api/cigarettes')
     def add():
         data = body() if request.data else {}
         quantity = integer(data.get('quantity', 1), 1, 200, 'quantity')
+        trigger = data.get('trigger', '')
+        if trigger not in TRIGGERS:
+            fail('invalid_input')
         source = data.get('source', 'api')
         if source not in ('web', 'android', 'api', 'streamdeck'):
             fail('invalid_source')
@@ -440,12 +568,13 @@ def create_app(config=None):
                 if previous:
                     return jsonify(serialize(previous)), 200
             try:
-                cursor = db().execute('INSERT INTO cigarettes(user_id,occurred_at,quantity,unit_cost_micros,source,idempotency_key,currency) VALUES(?,?,?,?,?,?,?)',
-                                      (g.user['id'], stamp(occurred), quantity, unit, source, key, g.user['currency']))
+                cursor = db().execute('INSERT INTO cigarettes(user_id,occurred_at,quantity,unit_cost_micros,source,idempotency_key,currency,trigger) VALUES(?,?,?,?,?,?,?,?)',
+                                      (g.user['id'], stamp(occurred), quantity, unit, source, key, g.user['currency'], trigger))
             except sqlite3.IntegrityError:
                 previous = db().execute('SELECT * FROM cigarettes WHERE user_id=? AND idempotency_key=?', (g.user['id'], key)).fetchone()
                 return jsonify(serialize(previous)), 200
             row = db().execute('SELECT * FROM cigarettes WHERE id=?', (cursor.lastrowid,)).fetchone()
+            invalidate_checkins(db(), g.user['id'], row['occurred_at'])
             queue_refresh(db(), g.user['id'])
         return jsonify(serialize(row)), 201
 
@@ -463,6 +592,9 @@ def create_app(config=None):
     @app.delete('/api/cigarettes/<int:entry_id>')
     def remove(entry_id):
         with db():
+            row = db().execute('SELECT occurred_at FROM cigarettes WHERE id=? AND user_id=?', (entry_id, g.user['id'])).fetchone()
+            if row:
+                invalidate_checkins(db(), g.user['id'], row['occurred_at'])
             deleted = db().execute('DELETE FROM cigarettes WHERE id=? AND user_id=?', (entry_id, g.user['id'])).rowcount
             if deleted:
                 queue_refresh(db(), g.user['id'])
@@ -483,7 +615,8 @@ def create_app(config=None):
             amounts[row['currency']] = amounts.get(row['currency'], 0) + row['quantity'] * row['unit_cost_micros']
         low, high = bounds(today, today, tz)
         def total(condition='', params=()):
-            rows = db().execute('SELECT currency,SUM(quantity) AS quantity,SUM(quantity*unit_cost_micros) AS amount FROM cigarettes WHERE user_id=? ' + condition + ' GROUP BY currency',
+            # condition is a fixed internal SQL fragment; values stay parameterized.
+            rows = db().execute('SELECT currency,SUM(quantity) AS quantity,SUM(quantity*unit_cost_micros) AS amount FROM cigarettes WHERE user_id=? ' + condition + ' GROUP BY currency',  # nosec B608
                                 (g.user['id'], *params)).fetchall()
             return dict(quantity=sum(row['quantity'] for row in rows),
                         **cost_summary({row['currency']: row['amount'] for row in rows}, g.user['currency']))
@@ -525,6 +658,7 @@ def create_app(config=None):
         for row in entries(start, end, tz):
             writer.writerow([row['id'], datetime.fromisoformat(row['occurred_at']).astimezone(tz).isoformat(),
                              row['quantity'], price_string(row['quantity'] * row['unit_cost_micros'], row['currency']), row['currency'], row['source']])
-        return app.response_class('\ufeff' + output.getvalue(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=stop-clop.csv'})
+        return app.response_class('\ufeff' + output.getvalue(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=suuless.csv'})
 
+    register_routes(app, db, lambda: now(), stamp, body, fail, integer, bounds, entries)
     return app

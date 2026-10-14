@@ -27,7 +27,7 @@ public final class DirectSyncService extends Service {
         getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel(CHANNEL,t.text("sync_notification_title"),NotificationManager.IMPORTANCE_LOW));
         PendingIntent open=PendingIntent.getActivity(this,7042,new Intent(this,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop=PendingIntent.getService(this,7043,new Intent(this,DirectSyncService.class).setAction(STOP),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        startForeground(7042,new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_launcher)
+        startForeground(7042,new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(t.text("sync_notification_title")).setContentText(t.text("sync_notification_body"))
             .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
             .addAction(new Notification.Action.Builder(null,t.text("push_disable"),stop).build()).build());
@@ -42,13 +42,14 @@ public final class DirectSyncService extends Service {
     private void status(String scope,String value){if(PushSync.current(this,scope))PushSync.state(this).edit().putString("status",value).apply();}
     private void refresh(String scope,String server,String token) throws Exception {
         if(!PushSync.current(this,scope))return;
-        PowerManager.WakeLock lock=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"StopClop:refresh");
+        PowerManager.WakeLock lock=getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"SuuLess:refresh");
         lock.acquire(30000);
         try{
         String language=CounterWidget.language(this);
         JSONObject settings=(JSONObject)ApiClient.request(server,token,language,"/settings","GET",null,null);
         if(!PushSync.current(this,scope))return;
         CounterWidget.preferences(this).edit().putString("language",settings.getString("language")).commit();
+        ReminderJobService.configure(this,settings);
         JSONObject stats=(JSONObject)ApiClient.request(server,token,language,"/stats","GET",null,null);
         CounterWidget.acceptStats(this,server,token,stats);
         }finally{if(lock.isHeld())lock.release();}

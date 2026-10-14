@@ -24,3 +24,7 @@ image.env
 digest.txt
 cosign.pub
 signature-verification.json
+
+# Local configuration and archived files
+/local/
+/old/

@@ -1,8 +1,8 @@
 {
-  "name": "stop-clop-web-checks",
+  "name": "suuless-web-checks",
   "private": true,
   "scripts": {
-    "test:web": "node tests/web-smoke.mjs && node tests/web-international.mjs && node tests/web-timezones.mjs && node tests/web-settings-sync.mjs && node tests/web-analysis.mjs"
+    "test:web": "node tests/web-smoke.mjs && node tests/web-international.mjs && node tests/web-timezones.mjs && node tests/web-settings-sync.mjs && node tests/web-analysis.mjs && node tests/web-coaching.mjs && node tests/web-navigation.mjs && node tests/web-sessions.mjs && node tests/web-account-deletion.mjs && node tests/web-admin.mjs && node tests/web-smtp-environment.mjs"
   },
   "devDependencies": {
     "playwright": "1.61.1"

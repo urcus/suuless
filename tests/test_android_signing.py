@@ -16,6 +16,10 @@ class AndroidSigningTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         (self.root / 'android').mkdir()
+        # This fixture isolates signing; the real Java policy suite runs in CI.
+        (self.root / 'scripts/ci').mkdir(parents=True)
+        (self.root / 'scripts/ci/android-version-code.sh').write_text(SCRIPT.with_name('android-version-code.sh').read_text())
+        (self.root / 'scripts/ci/test-reminders.sh').write_text('#!/usr/bin/env bash\nexit 0\n')
         wrapper = self.root / 'android/gradlew'
         wrapper.write_text('''#!/usr/bin/env python3
 import json, os, pathlib, sys
@@ -25,11 +29,12 @@ pathlib.Path('build-observation.json').write_text(json.dumps({
     'content': pathlib.Path(key).read_text() if key else None,
     'mode': pathlib.Path(key).stat().st_mode & 0o777 if key else None,
     'secret_in_child': 'ANDROID_DEBUG_KEYSTORE_BASE64' in os.environ,
+    'args': sys.argv[1:],
 }))
 if os.environ.get('FAIL_BUILD'): sys.exit(1)
 for variant, name in [('debug', 'app-debug.apk'), ('release', 'app-release-unsigned.apk')]:
     folder = pathlib.Path('android/app/build/outputs/apk') / variant
-    folder.mkdir(parents=True)
+    folder.mkdir(parents=True, exist_ok=True)
     (folder / name).write_bytes(b'test APK')
 ''')
         wrapper.chmod(0o700)
@@ -66,3 +71,10 @@ for variant, name in [('debug', 'app-debug.apk'), ('release', 'app-release-unsig
         result = self.run_build(ANDROID_DEBUG_KEYSTORE_BASE64='not!base64')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.root / 'build-observation.json').exists())
+
+    def test_release_version_does_not_depend_on_pipeline_counter(self):
+        for counter in ['12', '9000']:
+            result = self.run_build(CI_COMMIT_TAG='v0.7.0', CI_PIPELINE_IID=counter)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            observed = json.loads((self.root / 'build-observation.json').read_text())
+            self.assertIn('-PappVersionCode=1000007000', observed['args'])

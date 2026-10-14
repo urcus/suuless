@@ -1,0 +1,2840 @@
+openapi: 3.1.1
+info:
+  title: SuuLess API
+  version: unreleased
+  description: Contract for the current source tree. Account-scoped tracking, coaching and synchronization.
+    JSON request bodies are limited to 16 KiB. Unknown object fields are generally ignored. Error messages
+    are localized; use code for programmatic handling. HTML and static assets are outside this contract.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+- url: /
+  description: API origin; configure your deployment URL in your client.
+security:
+- bearerAuth: []
+tags:
+- name: Service
+- name: Account
+- name: Entries
+- name: Coaching
+- name: Synchronization
+paths:
+  /healthz:
+    get:
+      operationId: get_healthz
+      tags:
+      - Service
+      summary: Check server and database health
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    const: ok
+                required:
+                - status
+      security: []
+  /api/config:
+    get:
+      operationId: get_api_config
+      tags:
+      - Service
+      summary: Get public client configuration
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Config'
+      security: []
+  /api/auth/register:
+    post:
+      operationId: post_api_auth_register
+      tags:
+      - Account
+      summary: Register an account and issue a session (web 24h, Android 30 days)
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/IssuedToken'
+                - type: object
+                  properties:
+                    activation_required:
+                      const: true
+                    message:
+                      type: string
+                  required:
+                  - activation_required
+                  - message
+        '400':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client:
+                  type: string
+                  enum:
+                  - web
+                  - android
+                  default: web
+                  description: Declared client type; fixed expiry, not extended by activity. Not device
+                    attestation.
+                username:
+                  type: string
+                  pattern: ^[a-zA-Z0-9_.-]{3,40}$
+                password:
+                  type: string
+                  minLength: 12
+                  maxLength: 256
+                language:
+                  type: string
+                  enum:
+                  - en
+                  - fr
+                  - ja
+                  default: en
+                timezone:
+                  type: string
+                  default: Europe/Paris
+                email: &id002
+                  type: string
+                  format: email
+              required:
+              - username
+              - password
+      security: []
+      description: When SMTP is enabled, email is required and a pending account is created without a
+        session. The user must follow the activation email before signing in. Existing accounts remain
+        active.
+  /api/auth/login:
+    post:
+      operationId: post_api_auth_login
+      tags:
+      - Account
+      summary: Issue a session (web 24h, Android 30 days)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedToken'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                client:
+                  type: string
+                  enum:
+                  - web
+                  - android
+                  default: web
+                  description: Declared client type; fixed expiry, not extended by activity. Not device
+                    attestation.
+                username:
+                  type: string
+                password:
+                  type: string
+                  maxLength: 256
+              required:
+              - username
+              - password
+      security: []
+  /api/auth/logout:
+    post:
+      operationId: post_api_auth_logout
+      tags:
+      - Account
+      summary: Revoke the current token
+      responses:
+        '204':
+          description: Successful response
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/me:
+    delete:
+      operationId: delete_api_me
+      tags:
+      - Account
+      summary: Permanently delete the authenticated account and its data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - password
+              - confirm
+              properties:
+                password:
+                  type: string
+                  maxLength: 256
+                confirm:
+                  type: boolean
+                  const: true
+      responses:
+        '204':
+          description: Account and related records deleted; all tokens revoked
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+    get:
+      operationId: get_api_me
+      tags:
+      - Account
+      summary: Get current account
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    minimum: 1
+                  username:
+                    type: string
+                  role:
+                    enum:
+                    - admin
+                    - user
+                  language: &id001
+                    type: string
+                    enum:
+                    - en
+                    - fr
+                    - ja
+                  email:
+                    type:
+                    - string
+                    - 'null'
+                  email_verified:
+                    type: boolean
+                required:
+                - id
+                - username
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/sessions/others:
+    delete:
+      operationId: delete_api_sessions_others
+      tags:
+      - Account
+      summary: Revoke other sessions, preserving current access and API keys
+      description: Only explicitly typed sessions belonging to this account are revoked. Ambiguous legacy
+        access is preserved.
+      responses:
+        '204':
+          description: Other sessions revoked
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/tokens:
+    get:
+      operationId: get_api_tokens
+      tags:
+      - Account
+      summary: List unexpired account keys and sessions
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Token'
+        '401':
+          $ref: '#/components/responses/Error'
+    post:
+      operationId: post_api_tokens
+      tags:
+      - Account
+      summary: Create a 365-day API token
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedToken'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 60
+                  default: Stream Deck
+                  description: Whitespace is trimmed before validation.
+              required: []
+  /api/tokens/{token_id}:
+    delete:
+      operationId: delete_api_tokens_token_id
+      tags:
+      - Account
+      summary: Revoke an account token
+      responses:
+        '204':
+          description: Successful response
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: token_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+  /api/settings:
+    get:
+      operationId: get_api_settings
+      tags:
+      - Account
+      summary: Get account settings
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+        '401':
+          $ref: '#/components/responses/Error'
+    put:
+      operationId: put_api_settings
+      tags:
+      - Account
+      summary: Update supplied account settings
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settings'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingsUpdate'
+  /api/cigarettes:
+    get:
+      operationId: get_api_cigarettes
+      tags:
+      - Entries
+      summary: List entries in a date range
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Entry'
+                  total:
+                    type: integer
+                    minimum: 0
+                required:
+                - items
+                - total
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: start
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        description: 'Inclusive account-local date. Default: end=today, start=end minus 29 days. Range:
+          1–366 days, from 2000 through today.'
+      - name: end
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        description: 'Inclusive account-local date. Default: end=today, start=end minus 29 days. Range:
+          1–366 days, from 2000 through today.'
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 100
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 10000000
+          default: 0
+    post:
+      operationId: post_api_cigarettes
+      tags:
+      - Entries
+      summary: Record cigarettes
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entry'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+        '200':
+          description: Idempotent replay
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entry'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntryCreate'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9_.:-]{1,100}$
+      description: An empty body records one cigarette now. Dates must be from 2000 through now. Explicit
+        offset timestamps up to five seconds ahead are clamped to server receipt time. Local timestamps
+        reject nonexistent DST times and choose the first repeated time. Reusing an account-scoped idempotency
+        key returns the original entry, even if the body changes; deleting the entry releases its key.
+  /api/cigarettes/{entry_id}:
+    delete:
+      operationId: delete_api_cigarettes_entry_id
+      tags:
+      - Entries
+      summary: Delete an account entry
+      responses:
+        '204':
+          description: Successful response
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+  /api/cigarettes/{entry_id}/context:
+    patch:
+      operationId: patch_api_cigarettes_entry_id_context
+      tags:
+      - Entries
+      summary: Set the entry trigger
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trigger:
+                    type: string
+                    enum:
+                    - ''
+                    - coffee
+                    - stress
+                    - meal
+                    - social
+                    - boredom
+                    - other
+                required:
+                - trigger
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trigger:
+                  type: string
+                  enum:
+                  - ''
+                  - coffee
+                  - stress
+                  - meal
+                  - social
+                  - boredom
+                  - other
+                  default: ''
+              required: []
+      parameters:
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+  /api/stats:
+    get:
+      operationId: get_api_stats
+      tags:
+      - Entries
+      summary: Get totals and period analysis
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: start
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        description: 'Inclusive account-local date. Default: end=today, start=end minus 29 days. Range:
+          1–366 days, from 2000 through today.'
+      - name: end
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        description: 'Inclusive account-local date. Default: end=today, start=end minus 29 days. Range:
+          1–366 days, from 2000 through today.'
+      description: Costs are grouped by currency. Scalar cost/currency are null for mixed totals. A zero
+        comparison reference produces a null percentage. Projections use completed days only.
+  /api/export.csv:
+    get:
+      operationId: get_api_export_csv
+      tags:
+      - Entries
+      summary: Export entries as CSV
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/csv:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: start
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        description: 'Inclusive account-local date. Default: end=today, start=end minus 29 days. Range:
+          1–366 days, from 2000 through today.'
+      - name: end
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        description: 'Inclusive account-local date. Default: end=today, start=end minus 29 days. Range:
+          1–366 days, from 2000 through today.'
+      description: 'UTF-8 with BOM. Columns: id,local_datetime,quantity,cost,currency,source. Attachment
+        filename: suuless.csv.'
+  /api/sync/config:
+    get:
+      operationId: get_api_sync_config
+      tags:
+      - Synchronization
+      summary: Discover direct synchronization
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transport:
+                    const: sse
+                  path:
+                    const: /api/sync/events
+                required:
+                - transport
+                - path
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/sync/events:
+    get:
+      operationId: get_api_sync_events
+      tags:
+      - Synchronization
+      summary: Stream account refresh notifications
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '503':
+          description: Stream capacity reached
+          headers:
+            Retry-After:
+              schema:
+                type: string
+              description: Retry delay in seconds (30).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      parameters:
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema:
+          type: string
+          pattern: ^[0-9a-f]{32}$
+      description: 'Authenticated SSE stream. refresh events include an opaque revision id and empty JSON
+        data {}; revoked terminates a revoked/expired session. Heartbeat comments occur every 10 seconds;
+        streams end after about 60 seconds. Reconnect with Last-Event-ID and reload account data on refresh.
+        A limit of 16 streams per worker reserves capacity for ordinary requests; saturation returns 503
+        and Retry-After: 30.'
+  /api/push:
+    get:
+      operationId: get_api_push
+      tags:
+      - Synchronization
+      summary: Read legacy relay subscription
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Push'
+        '401':
+          $ref: '#/components/responses/Error'
+      description: Legacy optional relay. Enabled only when both push server URLs are configured. Endpoints
+        must belong to the configured public server; at most 16 subscriptions per account.
+    put:
+      operationId: put_api_push
+      tags:
+      - Synchronization
+      summary: Register legacy relay endpoint
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Push'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                endpoint:
+                  type: string
+                  format: uri
+              required:
+              - endpoint
+      description: Legacy optional relay. Enabled only when both push server URLs are configured. Endpoints
+        must belong to the configured public server; at most 16 subscriptions per account.
+    delete:
+      operationId: delete_api_push
+      tags:
+      - Synchronization
+      summary: Remove legacy relay subscription
+      responses:
+        '204':
+          description: Successful response
+        '401':
+          $ref: '#/components/responses/Error'
+      description: Legacy optional relay. Enabled only when both push server URLs are configured. Endpoints
+        must belong to the configured public server; at most 16 subscriptions per account.
+  /api/coaching:
+    get:
+      operationId: get_api_coaching
+      tags:
+      - Coaching
+      summary: Get plan, progress and current craving
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Coaching'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/coaching/plan:
+    put:
+      operationId: put_api_coaching_plan
+      tags:
+      - Coaching
+      summary: Update the versioned plan
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: integer
+                    minimum: 0
+                required:
+                - version
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanUpdate'
+      description: Supply the current version and changed fields only. Stale versions return 409 plan_conflict.
+        Dates must be from 2000 onward; step dates must be distinct. Supplied steps replace the entire
+        list. Enabled reminders inside quiet hours return 400 reminder_quiet_conflict. Times are account-local;
+        Monday=0. Empty or null quit_date clears the date.
+  /api/coaching/baseline:
+    post:
+      operationId: post_api_coaching_baseline
+      tags:
+      - Coaching
+      summary: Freeze a historical baseline
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Baseline'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                start:
+                  type: string
+                  format: date
+                end:
+                  type: string
+                  format: date
+              required:
+              - start
+              - end
+      description: An immutable snapshot of 1–90 completed days from 2000 onward, with at least one cigarette.
+        A second baseline returns 409 baseline_exists.
+  /api/check-ins/{day}:
+    put:
+      operationId: put_api_check_ins_day
+      tags:
+      - Coaching
+      summary: Confirm the expected daily total
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date:
+                    type: string
+                    format: date
+                  quantity:
+                    type: integer
+                    minimum: 0
+                  confirmed:
+                    const: true
+                required:
+                - date
+                - quantity
+                - confirmed
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 0
+                  maximum: 1000000
+              required:
+              - quantity
+      parameters:
+      - name: day
+        in: path
+        required: true
+        schema:
+          type: string
+          format: date
+      description: Date from 2000 through today in the account time zone. A changed total returns 409
+        checkin_conflict. Later entry additions/deletions invalidate affected confirmations.
+    delete:
+      operationId: delete_api_check_ins_day
+      tags:
+      - Coaching
+      summary: Reopen a day in the current time zone
+      responses:
+        '204':
+          description: Successful response
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: day
+        in: path
+        required: true
+        schema:
+          type: string
+          format: date
+  /api/cravings:
+    post:
+      operationId: post_api_cravings
+      tags:
+      - Coaching
+      summary: Start a craving pause
+      responses:
+        '201':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Craving'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+        '200':
+          description: Existing craving
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Craving'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                trigger:
+                  type: string
+                  enum:
+                  - ''
+                  - coffee
+                  - stress
+                  - meal
+                  - social
+                  - boredom
+                  - other
+                  default: ''
+                strategy:
+                  type: string
+                  enum:
+                  - walk
+                  - water
+                  - breathe
+                  - distract
+                  default: walk
+                minutes:
+                  type: integer
+                  minimum: 1
+                  maximum: 15
+                  default: 3
+              required: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9_.:-]{1,100}$
+      description: One pending craving per account. A repeated key or any already pending craving returns
+        the existing record.
+  /api/cravings/{craving_id}:
+    put:
+      operationId: put_api_cravings_craving_id
+      tags:
+      - Coaching
+      summary: Resolve a craving
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Craving'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '413':
+          $ref: '#/components/responses/Error'
+        '415':
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                outcome:
+                  type: string
+                  enum:
+                  - passed
+                  - smoked
+                  - cancelled
+              required:
+              - outcome
+      parameters:
+      - name: craving_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+      description: smoked atomically adds one cigarette at the current price. Repeating the same outcome
+        is safe; changing a final outcome returns 409 craving_conflict.
+  /api/coaching/export.csv:
+    get:
+      operationId: get_api_coaching_export_csv
+      tags:
+      - Coaching
+      summary: Export the last 30 completed coaching days
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Error'
+      description: 'UTF-8 with BOM. Columns: date,timezone,quantity,confirmed,chosen_goal,historical_costs.
+        Attachment filename: suuless-progress.csv.'
+  /api/admin/users:
+    get:
+      operationId: get_api_admin_users
+      tags:
+      - Administration
+      summary: List accounts without consumption or credentials
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    username:
+                      type: string
+                    email:
+                      type:
+                      - string
+                      - 'null'
+                    role:
+                      enum:
+                      - user
+                      - admin
+                    active:
+                      type: integer
+                      enum:
+                      - 0
+                      - 1
+                    language: *id001
+                  required: []
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      description: Requires an authenticated administrator session. Regular users and personal API keys
+        are denied.
+  /api/admin/users/{user_id}:
+    patch:
+      operationId: patch_api_admin_users_user_id
+      tags:
+      - Administration
+      summary: Enable or disable a user; disabling revokes all access
+      responses:
+        '204':
+          description: Completed
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      description: Requires an authenticated administrator session. Regular users and personal API keys
+        are denied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                active:
+                  type: boolean
+              required:
+              - active
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+  /api/admin/profile:
+    put:
+      operationId: put_api_admin_profile
+      tags:
+      - Administration
+      summary: Change administrator language
+      responses:
+        '204':
+          description: Completed
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      description: Requires an authenticated administrator session. Regular users and personal API keys
+        are denied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                language: *id001
+              required:
+              - language
+  /api/admin/smtp:
+    get:
+      operationId: get_api_admin_smtp
+      tags:
+      - Administration
+      summary: Read SMTP settings; password is never returned
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: &id003
+                    type: boolean
+                  host: &id004
+                    type: string
+                  port: &id005
+                    type: integer
+                    minimum: 1
+                    maximum: 65535
+                  security: &id006
+                    enum:
+                    - tls
+                    - starttls
+                    - plain
+                  username: &id007
+                    type: string
+                  sender: *id002
+                  public_url: &id008
+                    type: string
+                    format: uri
+                  password_set:
+                    type: boolean
+                  managed_by_environment:
+                    type: boolean
+                required: []
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      description: Requires an authenticated administrator session. Regular users and personal API keys
+        are denied.
+    put:
+      operationId: put_api_admin_smtp
+      tags:
+      - Administration
+      summary: Configure SMTP; omitted password preserves the saved value
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: *id003
+                  host: *id004
+                  port: *id005
+                  security: *id006
+                  username: *id007
+                  sender: *id002
+                  public_url: *id008
+                  password_set:
+                    type: boolean
+                  managed_by_environment:
+                    type: boolean
+                required: []
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      description: Requires an authenticated administrator session. Regular users and personal API keys
+        are denied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: *id003
+                host: *id004
+                port: *id005
+                security: *id006
+                username: *id007
+                password:
+                  type: string
+                  writeOnly: true
+                sender: *id002
+                public_url: *id008
+              required: []
+  /api/admin/smtp/test:
+    post:
+      operationId: post_api_admin_smtp_test
+      tags:
+      - Administration
+      summary: Send a test message using saved SMTP settings
+      responses:
+        '204':
+          description: Completed
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      description: Requires an authenticated administrator session. Regular users and personal API keys
+        are denied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: *id002
+              required:
+              - email
+  /api/admin/invitations:
+    get:
+      operationId: get_api_admin_invitations
+      tags:
+      - Administration
+      summary: List unexpired pending invitations (no secret tokens)
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    email: *id002
+                    language: *id001
+                    expires_at:
+                      type: string
+                      format: date-time
+                  required: []
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      description: Requires an authenticated administrator session. Regular users and personal API keys
+        are denied.
+    post:
+      operationId: post_api_admin_invitations
+      tags:
+      - Administration
+      summary: Send or replace a 48-hour invitation, including with closed registration
+      responses:
+        '204':
+          description: Completed
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      description: Requires an authenticated administrator session. Regular users and personal API keys
+        are denied.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: *id002
+                language: *id001
+              required:
+              - email
+  /api/admin/invitations/{invitation_id}:
+    delete:
+      operationId: delete_api_admin_invitations_invitation_id
+      tags:
+      - Administration
+      summary: Revoke an invitation
+      responses:
+        '204':
+          description: Completed
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      description: Requires an authenticated administrator session. Regular users and personal API keys
+        are denied.
+      parameters:
+      - name: invitation_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+  /api/account/email:
+    post:
+      operationId: post_api_account_email
+      tags:
+      - Account
+      summary: Set recovery email and send verification; requires current password
+      responses:
+        '202':
+          description: Successful response
+          content:
+            application/json:
+              schema: &id009
+                type: object
+                properties:
+                  message:
+                    type: string
+                required:
+                - message
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: *id002
+                password: &id010
+                  type: string
+                  minLength: 12
+                  maxLength: 256
+              required:
+              - email
+              - password
+  /api/auth/forgot-password:
+    post:
+      operationId: post_api_auth_forgot-password
+      tags:
+      - Account
+      summary: Request a one-hour reset link; response does not reveal account existence
+      responses:
+        '202':
+          description: Successful response
+          content:
+            application/json:
+              schema: *id009
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: *id002
+              required:
+              - email
+  /api/auth/resend-activation:
+    post:
+      operationId: post_api_auth_resend-activation
+      tags:
+      - Account
+      summary: Request a replacement activation link; suspended users are ineligible
+      responses:
+        '202':
+          description: Successful response
+          content:
+            application/json:
+              schema: *id009
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: *id002
+              required:
+              - email
+  /api/auth/complete:
+    post:
+      operationId: post_api_auth_complete
+      tags:
+      - Account
+      summary: Consume an invitation, activation or reset token once
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema: *id009
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '503':
+          $ref: '#/components/responses/Error'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                username:
+                  type: string
+                password: *id010
+              required:
+              - token
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Opaque session (web 24 hours, Android 30 days) or personal API token (365 days), not
+        a JWT.
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+      required:
+      - error
+    IssuedToken:
+      type: object
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      required:
+      - id
+      - token
+      - expires_at
+    Token:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum:
+          - api
+          - session
+          - legacy
+        client:
+          type:
+          - string
+          - 'null'
+          enum:
+          - web
+          - android
+          - null
+        created_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        id:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+      required:
+      - id
+      - name
+      - expires_at
+      - current
+    Timezone:
+      type: object
+      properties:
+        id:
+          type: string
+        city:
+          type: string
+        countries:
+          type: array
+          items:
+            type: string
+        country_codes:
+          type: array
+          items:
+            type: string
+        label:
+          type: string
+        search:
+          type: string
+        utc_offset:
+          type: string
+        offset_seconds:
+          type: integer
+        legacy:
+          type: boolean
+      required:
+      - id
+      - city
+      - countries
+      - country_codes
+      - label
+      - search
+      - utc_offset
+      - offset_seconds
+      - legacy
+    Config:
+      type: object
+      properties:
+        registration_enabled:
+          type: boolean
+        languages:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+                enum:
+                - en
+                - fr
+                - ja
+              name:
+                type: string
+            required:
+            - code
+            - name
+        currencies:
+          type: array
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              name:
+                type: string
+              digits:
+                type: integer
+                minimum: 0
+            required:
+            - code
+            - name
+            - digits
+        timezones:
+          type: array
+          items:
+            type: string
+        timezone_options:
+          type: array
+          items:
+            $ref: '#/components/schemas/Timezone'
+        timezone_aliases:
+          type: object
+          additionalProperties:
+            type: string
+        timezone_offsets_at:
+          type: string
+          format: date-time
+        tzdata_version:
+          type: string
+        email_required:
+          type: boolean
+      required:
+      - registration_enabled
+      - languages
+      - currencies
+      - timezones
+      - timezone_options
+      - timezone_aliases
+      - timezone_offsets_at
+      - tzdata_version
+    Reminders:
+      type: object
+      properties:
+        daily_enabled:
+          type: boolean
+        daily_time:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+        weekly_enabled:
+          type: boolean
+        weekly_day:
+          type: integer
+          minimum: 0
+          maximum: 6
+        weekly_time:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+        quiet_start:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+        quiet_end:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+      required:
+      - daily_enabled
+      - daily_time
+      - weekly_enabled
+      - weekly_day
+      - weekly_time
+      - quiet_start
+      - quiet_end
+    SettingsUpdate:
+      type: object
+      properties:
+        pack_price:
+          oneOf:
+          - type: string
+          - type: number
+            minimum: 0
+            maximum: 1000000
+          description: Currency units, maximum 1,000,000; precision must match the currency. Prefer a
+            decimal string.
+        pack_price_cents:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+          deprecated: true
+        pack_size:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        daily_target:
+          type: integer
+          minimum: 0
+          maximum: 200
+        currency:
+          type: string
+          description: Supported currency code from /api/config; changing it requires pack_price.
+        language:
+          type: string
+          enum:
+          - en
+          - fr
+          - ja
+        timezone:
+          type: string
+          description: Valid IANA time-zone identifier.
+      required: []
+    Settings:
+      type: object
+      properties:
+        pack_price:
+          type: string
+        pack_price_cents:
+          type: integer
+          minimum: 0
+          maximum: 100000000
+          deprecated: true
+        pack_size:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        daily_target:
+          type: integer
+          minimum: 0
+          maximum: 200
+        currency:
+          type: string
+          description: Supported currency code from /api/config; changing it requires pack_price.
+        language:
+          type: string
+          enum:
+          - en
+          - fr
+          - ja
+        timezone:
+          type: string
+          description: Valid IANA time-zone identifier.
+        timezone_info:
+          $ref: '#/components/schemas/Timezone'
+        reminders:
+          $ref: '#/components/schemas/Reminders'
+        coaching_goal:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 200
+          - type: 'null'
+        local_today:
+          type: string
+          format: date
+        local_datetime:
+          type: string
+          format: date-time
+      required:
+      - pack_price
+      - pack_price_cents
+      - pack_size
+      - daily_target
+      - currency
+      - language
+      - timezone
+      - timezone_info
+      - reminders
+      - coaching_goal
+      - local_today
+      - local_datetime
+    Entry:
+      type: object
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        occurred_at:
+          type: string
+          format: date-time
+        local_datetime:
+          type: string
+          format: date-time
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 200
+        cost:
+          type: number
+        currency:
+          type: string
+        source:
+          type: string
+          enum:
+          - web
+          - android
+          - api
+          - streamdeck
+        trigger:
+          type: string
+          enum:
+          - ''
+          - coffee
+          - stress
+          - meal
+          - social
+          - boredom
+          - other
+      required:
+      - id
+      - occurred_at
+      - local_datetime
+      - quantity
+      - cost
+      - currency
+      - source
+      - trigger
+    EntryCreate:
+      type: object
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 1
+        occurred_at:
+          type: string
+          format: date-time
+        occurred_at_local:
+          type: string
+          description: Local ISO timestamp without offset, interpreted in the account time zone.
+        source:
+          type: string
+          enum:
+          - web
+          - android
+          - api
+          - streamdeck
+          default: api
+        trigger:
+          type: string
+          enum:
+          - ''
+          - coffee
+          - stress
+          - meal
+          - social
+          - boredom
+          - other
+          default: ''
+      required: []
+      not:
+        required:
+        - occurred_at
+        - occurred_at_local
+    Totals:
+      type: object
+      properties:
+        quantity:
+          type: integer
+          minimum: 0
+        costs:
+          type: object
+          additionalProperties:
+            type: number
+        cost:
+          anyOf:
+          - type: number
+          - type: 'null'
+        currency:
+          anyOf:
+          - type: string
+          - type: 'null'
+      required:
+      - quantity
+      - costs
+      - cost
+      - currency
+    Analysis:
+      type: object
+      properties:
+        includes_today:
+          type: boolean
+        average_quantity_per_day:
+          type: number
+        average_cost_per_day:
+          type: object
+          additionalProperties:
+            type: number
+        days_with_entries:
+          type: integer
+          minimum: 0
+        minimum_quantity:
+          type: integer
+          minimum: 0
+        maximum_quantity:
+          type: integer
+          minimum: 0
+        previous_period:
+          type: object
+          properties:
+            start:
+              anyOf:
+              - type: string
+                format: date
+              - type: 'null'
+            end:
+              anyOf:
+              - type: string
+                format: date
+              - type: 'null'
+            days:
+              type: integer
+              minimum: 0
+            quantity:
+              type: integer
+              minimum: 0
+            costs:
+              type: object
+              additionalProperties:
+                type: number
+          required:
+          - start
+          - end
+          - days
+          - quantity
+          - costs
+        comparison:
+          type: object
+          properties:
+            quantity_delta:
+              anyOf:
+              - type: number
+              - type: 'null'
+            quantity_percent:
+              anyOf:
+              - type: number
+              - type: 'null'
+            cost_deltas:
+              type: object
+              additionalProperties:
+                type: number
+            cost_percent:
+              type: object
+              additionalProperties:
+                anyOf:
+                - type: number
+                - type: 'null'
+          required:
+          - quantity_delta
+          - quantity_percent
+          - cost_deltas
+          - cost_percent
+        daily:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              quantity:
+                type: integer
+                minimum: 0
+              costs:
+                type: object
+                additionalProperties:
+                  type: number
+              quantity_delta:
+                anyOf:
+                - type: number
+                - type: 'null'
+              quantity_percent:
+                anyOf:
+                - type: number
+                - type: 'null'
+              cost_deltas:
+                type: object
+                additionalProperties:
+                  type: number
+              cost_percent:
+                type: object
+                additionalProperties:
+                  anyOf:
+                  - type: number
+                  - type: 'null'
+            required:
+            - date
+            - quantity
+            - costs
+            - quantity_delta
+            - quantity_percent
+            - cost_deltas
+            - cost_percent
+        trend:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              window_days:
+                type: integer
+                minimum: 1
+                maximum: 7
+              quantity:
+                type: number
+              costs:
+                type: object
+                additionalProperties:
+                  type: number
+              quantity_delta:
+                type: number
+              cost_deltas:
+                type: object
+                additionalProperties:
+                  type: number
+            required:
+            - date
+            - window_days
+            - quantity
+            - costs
+            - quantity_delta
+            - cost_deltas
+        hourly:
+          type: array
+          items:
+            type: object
+            properties:
+              hour:
+                type: integer
+                minimum: 0
+                maximum: 23
+              quantity:
+                type: integer
+                minimum: 0
+              share_percent:
+                type: number
+            required:
+            - hour
+            - quantity
+            - share_percent
+          minItems: 24
+          maxItems: 24
+        weekdays:
+          type: array
+          items:
+            type: object
+            properties:
+              weekday:
+                type: integer
+                minimum: 0
+                maximum: 6
+              quantity:
+                type: integer
+                minimum: 0
+              days:
+                type: integer
+                minimum: 0
+              average:
+                anyOf:
+                - type: number
+                - type: 'null'
+            required:
+            - weekday
+            - quantity
+            - days
+            - average
+          minItems: 7
+          maxItems: 7
+        projection:
+          type: object
+          properties:
+            days:
+              type: integer
+              minimum: 30
+              maximum: 30
+            sample_days:
+              type: integer
+              minimum: 0
+            quantity:
+              anyOf:
+              - type: number
+              - type: 'null'
+            costs:
+              type: object
+              additionalProperties:
+                type: number
+          required:
+          - days
+          - sample_days
+          - quantity
+          - costs
+      required:
+      - includes_today
+      - average_quantity_per_day
+      - average_cost_per_day
+      - days_with_entries
+      - minimum_quantity
+      - maximum_quantity
+      - previous_period
+      - comparison
+      - daily
+      - trend
+      - hourly
+      - weekdays
+      - projection
+    Stats:
+      type: object
+      properties:
+        history_start:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+        history_days:
+          type: integer
+          minimum: 0
+        start:
+          type: string
+          format: date
+        end:
+          type: string
+          format: date
+        timezone:
+          type: string
+        today:
+          $ref: '#/components/schemas/Totals'
+        total:
+          $ref: '#/components/schemas/Totals'
+        period:
+          type: object
+          properties:
+            quantity:
+              type: integer
+              minimum: 0
+            costs:
+              type: object
+              additionalProperties:
+                type: number
+            cost:
+              anyOf:
+              - type: number
+              - type: 'null'
+            currency:
+              anyOf:
+              - type: string
+              - type: 'null'
+            average_per_day:
+              type: number
+            days:
+              type: integer
+              minimum: 1
+              maximum: 366
+            days_without_entries:
+              type: integer
+              minimum: 0
+          required:
+          - quantity
+          - costs
+          - cost
+          - currency
+          - average_per_day
+          - days
+          - days_without_entries
+        daily:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              quantity:
+                type: integer
+                minimum: 0
+              costs:
+                type: object
+                additionalProperties:
+                  type: number
+              cost:
+                anyOf:
+                - type: number
+                - type: 'null'
+              currency:
+                anyOf:
+                - type: string
+                - type: 'null'
+            required:
+            - date
+            - quantity
+            - costs
+            - cost
+            - currency
+        analysis:
+          $ref: '#/components/schemas/Analysis'
+      required:
+      - history_start
+      - history_days
+      - start
+      - end
+      - timezone
+      - today
+      - total
+      - period
+      - daily
+      - analysis
+    Baseline:
+      type: object
+      properties:
+        start:
+          type: string
+          format: date
+        end:
+          type: string
+          format: date
+        days:
+          type: integer
+          minimum: 1
+          maximum: 90
+        quantity:
+          type: integer
+          minimum: 1
+        timezone:
+          type: string
+        amounts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: Historical costs by currency, in millionths of a currency unit.
+      required:
+      - start
+      - end
+      - days
+      - quantity
+      - timezone
+      - amounts
+    PlanUpdate:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        mode:
+          type: string
+          enum:
+          - observe
+          - reduce
+          - quit
+        reason:
+          type: string
+          maxLength: 300
+        daily_goal:
+          type: integer
+          minimum: 0
+          maximum: 200
+        quit_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          - const: ''
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              goal:
+                type: integer
+                minimum: 0
+                maximum: 200
+            required:
+            - date
+            - goal
+          maxItems: 30
+        strategy:
+          type: string
+          enum:
+          - walk
+          - water
+          - breathe
+          - distract
+        country:
+          type: string
+          enum:
+          - other
+          - FR
+          - GB
+          - JP
+        daily_enabled:
+          type: boolean
+        daily_time:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+        weekly_enabled:
+          type: boolean
+        weekly_day:
+          type: integer
+          minimum: 0
+          maximum: 6
+        weekly_time:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+        quiet_start:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+        quiet_end:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+      required:
+      - version
+    Plan:
+      type: object
+      properties:
+        version:
+          type: integer
+          minimum: 0
+        mode:
+          type: string
+          enum:
+          - observe
+          - reduce
+          - quit
+        reason:
+          type: string
+          maxLength: 300
+        daily_goal:
+          type: integer
+          minimum: 0
+          maximum: 200
+        quit_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+        steps:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              goal:
+                type: integer
+                minimum: 0
+                maximum: 200
+            required:
+            - date
+            - goal
+          maxItems: 30
+        strategy:
+          type: string
+          enum:
+          - walk
+          - water
+          - breathe
+          - distract
+        country:
+          type: string
+          enum:
+          - other
+          - FR
+          - GB
+          - JP
+        daily_enabled:
+          type: boolean
+        daily_time:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+        weekly_enabled:
+          type: boolean
+        weekly_day:
+          type: integer
+          minimum: 0
+          maximum: 6
+        weekly_time:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+        quiet_start:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+        quiet_end:
+          type: string
+          pattern: ^([01][0-9]|2[0-3]):[0-5][0-9]$
+        baseline:
+          anyOf:
+          - $ref: '#/components/schemas/Baseline'
+          - type: 'null'
+      required:
+      - version
+      - mode
+      - reason
+      - daily_goal
+      - quit_date
+      - steps
+      - strategy
+      - country
+      - daily_enabled
+      - daily_time
+      - weekly_enabled
+      - weekly_day
+      - weekly_time
+      - quiet_start
+      - quiet_end
+      - baseline
+    Craving:
+      type: object
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        user_id:
+          type: integer
+          minimum: 1
+        started_at:
+          type: string
+          format: date-time
+        pause_until:
+          type: string
+          format: date-time
+        trigger:
+          type: string
+          enum:
+          - ''
+          - coffee
+          - stress
+          - meal
+          - social
+          - boredom
+          - other
+        strategy:
+          type: string
+          enum:
+          - walk
+          - water
+          - breathe
+          - distract
+        outcome:
+          type: string
+          enum:
+          - pending
+          - passed
+          - smoked
+          - cancelled
+        resolved_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        cigarette_id:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+        idempotency_key:
+          type: string
+      required:
+      - id
+      - user_id
+      - started_at
+      - pause_until
+      - trigger
+      - strategy
+      - outcome
+      - resolved_at
+      - cigarette_id
+      - idempotency_key
+    Coaching:
+      type: object
+      properties:
+        plan:
+          $ref: '#/components/schemas/Plan'
+        current_goal:
+          anyOf:
+          - type: integer
+            minimum: 0
+            maximum: 200
+          - type: 'null'
+        now:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        local_today:
+          type: string
+          format: date
+        local_datetime:
+          type: string
+          format: date-time
+        days:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              quantity:
+                type: integer
+                minimum: 0
+              confirmed:
+                type: boolean
+              goal:
+                anyOf:
+                - type: integer
+                  minimum: 0
+                  maximum: 200
+                - type: 'null'
+              costs:
+                type: object
+                additionalProperties:
+                  type: number
+            required:
+            - date
+            - quantity
+            - confirmed
+            - goal
+            - costs
+          minItems: 31
+          maxItems: 31
+        weekly:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date
+            end:
+              type: string
+              format: date
+            current:
+              type: object
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 0
+                confirmed_days:
+                  type: integer
+                  minimum: 0
+                  maximum: 7
+                costs:
+                  type: object
+                  additionalProperties:
+                    type: number
+              required:
+              - quantity
+              - confirmed_days
+              - costs
+            previous:
+              type: object
+              properties:
+                quantity:
+                  type: integer
+                  minimum: 0
+                confirmed_days:
+                  type: integer
+                  minimum: 0
+                  maximum: 7
+                costs:
+                  type: object
+                  additionalProperties:
+                    type: number
+              required:
+              - quantity
+              - confirmed_days
+              - costs
+          required:
+          - start
+          - end
+          - current
+          - previous
+        progress:
+          anyOf:
+          - type: object
+            properties:
+              confirmed_days:
+                type: integer
+                minimum: 0
+              average:
+                anyOf:
+                - type: number
+                - type: 'null'
+              reference_average:
+                type: number
+              quantity_difference:
+                anyOf:
+                - type: number
+                - type: 'null'
+              reduction_percent:
+                anyOf:
+                - type: number
+                - type: 'null'
+              estimated_cost_difference:
+                type: object
+                additionalProperties:
+                  type: number
+            required:
+            - confirmed_days
+            - average
+            - reference_average
+            - quantity_difference
+            - reduction_percent
+            - estimated_cost_difference
+          - type: 'null'
+        confirmed_smoke_free_days:
+          type: integer
+          minimum: 0
+        cravings_passed:
+          type: integer
+          minimum: 0
+        quit_since:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        pending_craving:
+          anyOf:
+          - $ref: '#/components/schemas/Craving'
+          - type: 'null'
+        triggers:
+          type: array
+          items:
+            type: object
+            properties:
+              trigger:
+                type: string
+                enum:
+                - ''
+                - coffee
+                - stress
+                - meal
+                - social
+                - boredom
+                - other
+              cigarettes:
+                type: integer
+                minimum: 0
+              cravings:
+                type: integer
+                minimum: 0
+              passed:
+                type: integer
+                minimum: 0
+            required:
+            - trigger
+            - cigarettes
+            - cravings
+            - passed
+      required:
+      - plan
+      - current_goal
+      - now
+      - timezone
+      - local_today
+      - local_datetime
+      - days
+      - weekly
+      - progress
+      - confirmed_smoke_free_days
+      - cravings_passed
+      - quit_since
+      - pending_craving
+      - triggers
+    Push:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        server:
+          anyOf:
+          - type: string
+          - type: 'null'
+        registered:
+          type: boolean
+      required:
+      - enabled
+      - server
+      - registered
+  responses:
+    Error:
+      description: Request failed. error is localized; code is a stable identifier when present.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

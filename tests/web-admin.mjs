@@ -1,0 +1,53 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdtemp,readFile,rm,mkdir} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+const temp=await mkdtemp(join(tmpdir(),'suuless-admin-'));
+const fixture=spawn('.venv/bin/python',['tests/admin_web_server.py'],{env:{...process.env,PYTHONPATH:process.cwd(),ADMIN_TEST_DATABASE:join(temp,'db'),ADMIN_TEST_MAIL:join(temp,'mail.json')},stdio:['ignore','pipe','pipe']});
+let stderr='';fixture.stderr.on('data',c=>stderr+=c);
+let browser;
+try{
+ const port=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Fixture timeout: '+stderr)),20000);fixture.stdout.once('data',c=>{clearTimeout(timer);resolve(Number(c.toString().trim()));});fixture.once('exit',code=>{clearTimeout(timer);reject(new Error('Fixture stopped '+code+' '+stderr));});});
+ const base='http://127.0.0.1:'+port;
+ browser=await chromium.launch();const page=await browser.newPage({viewport:{width:1280,height:900}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const login=async(p,name,password)=>{await p.goto(base);await p.locator('[name=username]').fill(name);await p.locator('[name=password]').fill(password);await p.locator('#auth-submit').click();};
+ const mail=async()=>JSON.parse(await readFile(join(temp,'mail.json'),'utf8'));
+ const mailURL=async()=>{const content=(await mail()).content;return base+new URL(content.match(/https?:\/\/\S+/)[0]).pathname+new URL(content.match(/https?:\/\/\S+/)[0]).hash;};
+ await login(page,'administrator','administrator-test-password');await page.waitForURL(base+'/admin');await page.locator('#admin-content').waitFor({state:'visible'});
+ assert.equal(await page.locator('#dashboard').count(),0);
+ await page.locator('[data-tab=smtp]').click();
+ const smtp=page.locator('#smtp-form');await smtp.locator('[name=enabled]').check();
+ for(const [key,value] of Object.entries({host:'smtp.example.com',port:'587',username:'mailer',password:'smtp-browser-secret',sender:'suuless@example.com',public_url:base}))await smtp.locator(`[name=${key}]`).fill(value);
+ await smtp.locator('button').click();await page.waitForFunction(()=>document.getElementById('smtp-password-state').textContent.length>0);
+ assert.equal(await smtp.locator('[name=password]').inputValue(),'');
+ await page.locator('#smtp-test-form [name=email]').fill('test@example.com');await page.locator('#smtp-test-form button').click();await page.waitForFunction(()=>document.getElementById('portal-message').textContent==='Email sent.');
+ assert.equal((await mail()).recipient,'test@example.com');
+ const registering=await browser.newPage();await registering.goto(base);await registering.locator('#auth-switch').click();
+ await registering.locator('#auth-form [name=username]').fill('registered');await registering.locator('#auth-form [name=password]').fill('registered-browser-password');await registering.locator('#auth-email').fill('registered@example.com');await registering.locator('#auth-submit').click();
+ await registering.waitForFunction(()=>document.getElementById('message').textContent.includes('If this address'));
+ assert.equal(await registering.evaluate(()=>sessionStorage.getItem('stop-clop-token')),null);
+ await registering.goto(await mailURL());await registering.locator('#complete-submit').click();await registering.locator('#complete-form').waitFor({state:'hidden'});
+ await login(registering,'registered','registered-browser-password');await registering.locator('#dashboard').waitFor({state:'visible'});await registering.close();
+
+ await page.locator('[data-tab=invitations]').click();await page.locator('#invite-form [name=email]').fill('new@example.com');await page.locator('#invite-form button').click();await page.locator('#invitation-list li').waitFor();
+ const invitationURL=await mailURL();
+ const user=await browser.newPage({viewport:{width:390,height:844}});user.on('pageerror',e=>errors.push(e.message));
+ await user.goto(invitationURL);await user.locator('#complete-form').waitFor({state:'visible'});assert.equal(new URL(user.url()).hash,'');
+ await user.locator('[name=username]').fill('invited');await user.locator('[name=password]').fill('invited-browser-password');await user.locator('[name=confirm]').fill('invited-browser-password');await user.locator('#complete-submit').click();await user.locator('#complete-form').waitFor({state:'hidden'});
+ await login(user,'invited','invited-browser-password');await user.locator('#dashboard').waitFor({state:'visible'});
+ const oldToken=await user.evaluate(()=>sessionStorage.getItem('stop-clop-token'));
+ await user.goto(base+'/admin');await user.waitForURL(base+'/');await user.locator('#dashboard').waitFor({state:'visible'});
+ const forbidden=await page.request.get(base+'/api/admin/users',{headers:{Authorization:'Bearer '+oldToken}});assert.equal(forbidden.status(),403);
+ await user.goto(base+'/account?mode=forgot');await user.locator('[name=email]').fill('new@example.com');await user.locator('#request-form button').click();await user.waitForFunction(()=>document.getElementById('portal-message').textContent.includes('If this address'));
+ await user.goto(await mailURL());await user.locator('#password-fields').waitFor({state:'visible'});await user.locator('[name=password]').fill('changed-browser-password');await user.locator('[name=confirm]').fill('changed-browser-password');await user.locator('#complete-submit').click();await user.locator('#complete-form').waitFor({state:'hidden'});
+ assert.equal((await page.request.get(base+'/api/me',{headers:{Authorization:'Bearer '+oldToken}})).status(),401);
+ await login(user,'invited','changed-browser-password');await user.locator('#dashboard').waitFor({state:'visible'});
+ await page.locator('[data-tab=users]').click();await page.reload();await page.locator('#user-list tr').nth(1).waitFor();
+ page.once('dialog',dialog=>dialog.accept());await page.locator('#user-list tr').filter({hasText:'invited'}).locator('button').click();await page.waitForFunction(()=>document.getElementById('user-list').textContent.includes('Inactive'));
+ await mkdir('test-results',{recursive:true});
+ for(const code of ['en','fr','ja']){await page.locator('#portal-language').selectOption(code);await page.waitForFunction(code=>document.documentElement.lang===code,code);await page.screenshot({path:`test-results/admin-${code}.png`,fullPage:true});}
+ await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'test-results/admin-mobile.png',fullPage:true});
+ assert.deepEqual(errors,[]);console.log('Admin web OK: role routing, SMTP, invitations, email reset, session revocation, user suspension, EN/FR/JA and mobile.');
+}finally{if(browser)await browser.close();fixture.kill('SIGTERM');await new Promise(resolve=>fixture.exitCode!==null||fixture.signalCode!==null?resolve():fixture.once('exit',resolve));await rm(temp,{recursive:true,force:true});}

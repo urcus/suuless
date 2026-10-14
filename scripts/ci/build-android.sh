@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+bash scripts/ci/test-reminders.sh
 # Published debug APKs must keep their signing identity across disposable runners.
 # Local and unprotected builds can still use the SDK's local debug key.
 if [[ -n "${ANDROID_DEBUG_KEYSTORE_BASE64:-}" ]]; then
@@ -14,13 +15,13 @@ elif [[ "${CI_COMMIT_TAG:-}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "${CI_COMMIT_REF_PR
 fi
 version="${CI_COMMIT_TAG:-0.1.0-dev.${CI_PIPELINE_IID:-local}}"
 version="${version#v}"
-version_code="${CI_PIPELINE_IID:-1}"
+version_code=$(bash scripts/ci/android-version-code.sh "${CI_COMMIT_TAG:-}")
 ./android/gradlew -p android --no-daemon \
   -PappVersionName="$version" -PappVersionCode="$version_code" \
   assembleDebug assembleRelease lintDebug lintRelease
 mkdir -p dist/android
-cp android/app/build/outputs/apk/debug/app-debug.apk "dist/android/stop-clop-${version}-debug.apk"
-cp android/app/build/outputs/apk/release/app-release-unsigned.apk "dist/android/stop-clop-${version}-release-unsigned.apk"
+cp android/app/build/outputs/apk/debug/app-debug.apk "dist/android/suuless-${version}-debug.apk"
+cp android/app/build/outputs/apk/release/app-release-unsigned.apk "dist/android/suuless-${version}-release-unsigned.apk"
 (
   cd dist/android
   sha256sum ./*.apk > SHA256SUMS

@@ -1,6 +1,7 @@
 image: node:24.11.0-bookworm-slim
 
 stages:
+  - security
   - validate
   - build
   - image
@@ -37,19 +38,29 @@ default:
 
 quality:api:
   stage: validate
+  needs:
+    - job: security
+      artifacts: false
+    - job: security:npm
+      artifacts: false
   image: python:3.13-slim-bookworm
   cache:
     key:
       prefix: python-3.13
-      files: [requirements.txt]
+      files: [requirements.txt, requirements-dev.txt]
     paths: [.cache/pip/]
   script:
     - python --version
-    - pip install -r requirements.txt
+    - pip install -r requirements-dev.txt
     - python -m unittest discover -s tests -v
 
 quality:web:
   stage: validate
+  needs:
+    - job: security
+      artifacts: false
+    - job: security:npm
+      artifacts: false
   cache:
     key:
       prefix: node-24
@@ -79,7 +90,11 @@ quality:web:
 android:build:
   stage: build
   image: eclipse-temurin:17-jdk-jammy
-  needs: ["quality:api", "quality:web"]
+  needs:
+    - job: quality:api
+      artifacts: false
+    - job: quality:web
+      artifacts: false
   cache:
     key:
       prefix: android-sdk36-gradle8.13
@@ -103,52 +118,112 @@ android:build:
       - android/app/build/reports/lint-results-*.txt
     expire_in: 1 week
 
-image:publish:
-  extends: .release-tag
-  stage: image
-  interruptible: false
+security:
+  stage: security
+  image: python:3.13-slim-bookworm
+  needs: []
+  parallel:
+    matrix:
+      - SCAN: [python, code, secrets, config]
+  before_script:
+    - |
+      case "$SCAN" in
+        python|code) pip install -r scripts/security/requirements.txt ;;
+        secrets)
+          apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+          python scripts/security/install-tool.py gitleaks ;;
+        config) python scripts/security/install-tool.py trivy ;;
+      esac
+  script:
+    - bash scripts/security/scan.sh "$SCAN"
+  artifacts:
+    when: always
+    paths: [test-results/security/]
+    expire_in: 1 week
+
+security:npm:
+  stage: security
+  needs: []
+  script:
+    - bash scripts/security/scan.sh npm
+  artifacts:
+    when: always
+    paths: [test-results/security/]
+    expire_in: 1 week
+
+image:build:
+  stage: build
+  needs:
+    - job: quality:api
+      artifacts: false
+    - job: quality:web
+      artifacts: false
   tags: [k8s, kaniko]
   image:
     name: "$KANIKO_IMAGE"
     entrypoint: [""]
+  script:
+    - |
+      set -eu
+      mkdir -p dist/image
+      /kaniko/executor \
+        --context "$CI_PROJECT_DIR" \
+        --dockerfile "$CI_PROJECT_DIR/Dockerfile" \
+        --destination suuless:ci \
+        --no-push --no-push-cache --cache=false \
+        --tar-path "$CI_PROJECT_DIR/dist/image/image.tar"
+      gzip dist/image/image.tar
+  artifacts:
+    paths: [dist/image/image.tar.gz]
+    expire_in: 1 day
+
+image:scan:
+  stage: image
+  image: python:3.13-slim-bookworm
   needs:
+    - job: image:build
+      artifacts: true
+  script:
+    - python scripts/security/install-tool.py trivy
+    - bash scripts/security/scan.sh image dist/image/image.tar.gz
+  artifacts:
+    when: always
+    paths: [test-results/security/]
+    expire_in: 1 week
+
+image:publish:
+  extends: .release-tag
+  stage: image
+  interruptible: false
+  image: python:3.13-slim-bookworm
+  needs:
+    - job: image:build
+      artifacts: true
+    - job: image:scan
+      artifacts: false
+    - job: quality:api
+      artifacts: false
+    - job: quality:web
+      artifacts: false
     - job: android:build
       artifacts: false
+    - job: security
+      artifacts: false
+    - job: security:npm
+      artifacts: false
   script:
+    - python scripts/security/install-tool.py crane
     - |
       set -eu
       : "${HARBOR_URL:?HARBOR_URL is required}"
       : "${PROJECT:?PROJECT is required}"
       : "${HARBOR_USER:?HARBOR_USER is required}"
       : "${HARBOR_PASSWORD:?HARBOR_PASSWORD is required}"
-      IMAGE_REPOSITORY="${HARBOR_URL}/${PROJECT}/${CI_PROJECT_NAME}"
-      IMAGE_TAG="${CI_COMMIT_TAG#v}"
-      IMAGE_NAME="${IMAGE_REPOSITORY}:${IMAGE_TAG}"
       umask 077
-      mkdir -p "${DOCKER_CONFIG}"
-      AUTH="$(printf '%s:%s' "${HARBOR_USER}" "${HARBOR_PASSWORD}" | base64 | tr -d '\n')"
-      printf '{"auths":{"%s":{"auth":"%s"}}}\n' "${HARBOR_URL}" "${AUTH}" > "${DOCKER_CONFIG}/config.json"
-      trap 'rm -f "${DOCKER_CONFIG}/config.json"' EXIT
-      # Credentials already have mode 0600; build files must be readable by USER app.
-      umask 022
-      /kaniko/executor \
-        --context "${CI_PROJECT_DIR}" \
-        --dockerfile "${CI_PROJECT_DIR}/Dockerfile" \
-        --destination "${IMAGE_NAME}" \
-        --cache=true \
-        --cache-copy-layers=true \
-        --cache-run-layers=true \
-        --cache-repo "${IMAGE_REPOSITORY}-cache" \
-        --cache-ttl=168h \
-        --snapshot-mode=redo \
-        --digest-file="${CI_PROJECT_DIR}/digest.txt"
-      IMAGE_DIGEST="$(cat "${CI_PROJECT_DIR}/digest.txt")"
-      printf '%s\n' "${IMAGE_DIGEST}" | grep -Eq '^sha256:[a-f0-9]{64}$'
-      {
-        echo "STOP_CLOP_IMAGE_NAME=${IMAGE_NAME}"
-        echo "STOP_CLOP_IMAGE_DIGEST=${IMAGE_DIGEST}"
-        echo "STOP_CLOP_IMAGE_REF=${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
-      } > image.env
+      mkdir -p "$DOCKER_CONFIG"
+      trap 'rm -f "$DOCKER_CONFIG/config.json"' EXIT
+      printf '%s' "$HARBOR_PASSWORD" | .cache/security-bin/crane auth login "$HARBOR_URL" --username "$HARBOR_USER" --password-stdin
+      bash scripts/ci/push-scanned-image.sh dist/image/image.tar.gz "${HARBOR_URL}/${PROJECT}/${CI_PROJECT_NAME}:${CI_COMMIT_TAG#v}"
   artifacts:
     reports:
       dotenv: image.env
@@ -174,7 +249,7 @@ image:sign:
       : "${HARBOR_PASSWORD:?HARBOR_PASSWORD is required}"
       : "${COSIGN_PRIVATE_KEY:?COSIGN_PRIVATE_KEY is required}"
       : "${COSIGN_PASSWORD:?COSIGN_PASSWORD is required}"
-      : "${STOP_CLOP_IMAGE_REF:?STOP_CLOP_IMAGE_REF is required}"
+      : "${SUULESS_IMAGE_REF:?SUULESS_IMAGE_REF is required}"
       umask 077
       mkdir -p "${DOCKER_CONFIG}"
       AUTH="$(printf '%s:%s' "${HARBOR_USER}" "${HARBOR_PASSWORD}" | base64 | tr -d '\n')"
@@ -187,9 +262,9 @@ image:sign:
         export COSIGN_KEY
         COSIGN_KEY_REFERENCE="env://COSIGN_KEY"
       fi
-      cosign sign --key "${COSIGN_KEY_REFERENCE}" -y "${STOP_CLOP_IMAGE_REF}"
+      cosign sign --key "${COSIGN_KEY_REFERENCE}" -y "${SUULESS_IMAGE_REF}"
       cosign public-key --key "${COSIGN_KEY_REFERENCE}" > cosign.pub
-      cosign verify --key cosign.pub "${STOP_CLOP_IMAGE_REF}" > signature-verification.json
+      cosign verify --key cosign.pub "${SUULESS_IMAGE_REF}" > signature-verification.json
   artifacts:
     paths: [cosign.pub, signature-verification.json]
     expire_in: 1 week

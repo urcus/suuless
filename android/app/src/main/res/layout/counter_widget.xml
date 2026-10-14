@@ -2,13 +2,16 @@
     android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="horizontal" android:gravity="center_vertical"
     android:padding="8dp" android:background="@drawable/widget_background">
-    <TextView android:id="@+id/widget_open" android:layout_width="48dp" android:layout_height="48dp"
-        android:gravity="center" android:text="◉" android:textSize="26sp" android:textColor="#def5a9"
+    <ImageView android:id="@+id/widget_open" android:layout_width="48dp" android:layout_height="48dp"
+        android:src="@drawable/ic_brand_mark" android:scaleType="fitCenter" android:padding="2dp"
         android:contentDescription="@string/app_name" />
     <TextView android:id="@+id/widget_count" android:layout_width="0dp" android:layout_weight="1"
         android:layout_height="48dp" android:gravity="center_vertical" android:maxLines="2"
         android:ellipsize="end" android:textSize="14sp" android:textColor="#ffffff" />
-    <Button android:id="@+id/widget_plus" android:layout_width="88dp" android:layout_height="48dp"
+    <Button android:id="@+id/widget_craving" android:layout_width="76dp" android:layout_height="48dp"
+        android:text="…" android:textSize="12sp" android:textColor="#ffffff"
+        android:backgroundTint="#426858" android:padding="2dp" />
+    <Button android:id="@+id/widget_plus" android:layout_width="64dp" android:layout_height="48dp"
         android:text="+1" android:textSize="16sp" android:textColor="#163d32"
         android:backgroundTint="#def5a9" android:padding="4dp" />
 </LinearLayout>

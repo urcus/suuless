@@ -1,8 +1,16 @@
-FROM python:3.13-slim
+# Pin the multi-platform index so native amd64 and arm64 builds use the same release.
+FROM python:3.13.16-alpine3.24@sha256:2d9aefe2fef018a7eb2c13064c89c71929800fd2e5dccdbf52ea5da5bb8d929a
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DATABASE=/data/stopclop.db
 WORKDIR /app
 COPY requirements.txt .
-RUN umask 022 && pip install --no-cache-dir -r requirements.txt && useradd --uid 10001 --create-home app && mkdir -p /data && chown app:app /data
+# Installation tools and their vendored dependencies are not needed at runtime.
+RUN umask 022 \
+    && python -m pip install --no-cache-dir --only-binary=:all: -r requirements.txt \
+    && python -m pip uninstall -y pip \
+    && rm -rf /usr/local/lib/python3.13/ensurepip \
+    && addgroup -g 10001 app \
+    && adduser -D -u 10001 -G app app \
+    && mkdir -p /data && chown app:app /data
 COPY server ./server
 USER app
 RUN python -c "import gunicorn.app.wsgiapp; from tempfile import TemporaryDirectory; from server.app import create_app; temporary = TemporaryDirectory(); app = create_app({'DATABASE': temporary.name + '/probe.db'}); assert app.test_client().get('/healthz').status_code == 200; temporary.cleanup()"

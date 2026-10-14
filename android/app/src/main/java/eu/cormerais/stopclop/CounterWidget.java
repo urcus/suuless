@@ -88,12 +88,15 @@ public final class CounterWidget extends AppWidgetProvider {
         }
         for(int id:ids){
             RemoteViews view=new RemoteViews(context.getPackageName(),R.layout.counter_widget);
-            view.setTextViewText(R.id.widget_count,(scope.isEmpty()?"Stop Clop":t.text("widget_today",count))+"\n"+note);
+            view.setTextViewText(R.id.widget_count,(scope.isEmpty()?t.text("app_name"):t.text("widget_today",count))+"\n"+note);
             view.setTextViewText(R.id.widget_plus,pending&&!busy?t.text("widget_retry"):"+1");
             view.setBoolean(R.id.widget_plus,"setEnabled",!scope.isEmpty()&&!busy);
             view.setContentDescription(R.id.widget_plus,t.text(pending?"widget_retry":"widget_add"));
             view.setContentDescription(R.id.widget_count,(scope.isEmpty()?t.text("widget_sign_in"):t.text("widget_today",count))+". "+t.text("widget_refresh")+". "+note);
             PendingIntent open=PendingIntent.getActivity(context,id,new Intent(context,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+            view.setTextViewText(R.id.widget_craving,t.text("craving_button"));view.setContentDescription(R.id.widget_craving,t.text("craving_button"));
+            Intent urge=new Intent(context,MainActivity.class).setAction("eu.cormerais.stopclop.CRAVING").putExtra("open_coaching_craving",true).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            view.setOnClickPendingIntent(R.id.widget_craving,PendingIntent.getActivity(context,id,urge,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE));
             view.setOnClickPendingIntent(R.id.widget_open,open);
             view.setOnClickPendingIntent(R.id.widget_count,scope.isEmpty()?open:click(context,id,REFRESH));
             view.setOnClickPendingIntent(R.id.widget_plus,click(context,id,ADD));

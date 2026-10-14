@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stop-clop
+  namespace: stop-clop
+spec:
+  # Replace with an IngressClass installed in your cluster.
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - stop-clop.example.com
+      secretName: stop-clop-tls
+  rules:
+    - host: stop-clop.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: stop-clop
+                port:
+                  name: http

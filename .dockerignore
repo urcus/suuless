@@ -21,3 +21,9 @@ image.env
 digest.txt
 cosign.pub
 signature-verification.json
+
+local/
+old/
+
+# Local agent context is not part of the Docker build.
+AGENTS.md

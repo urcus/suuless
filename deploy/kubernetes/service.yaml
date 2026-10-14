@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: stop-clop
+  namespace: stop-clop
+spec:
+  type: ClusterIP
+  selector:
+    app: stop-clop
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http

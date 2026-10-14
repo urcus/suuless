@@ -49,6 +49,7 @@ public final class WidgetJobService extends JobService {
             JSONObject settings=(JSONObject)ApiClient.request(server,token,language,"/settings","GET",null,null);
             if(!current(scope))return;
             CounterWidget.preferences(this).edit().putString("language",settings.getString("language")).commit();
+            ReminderJobService.configure(this,settings);
             JSONObject stats=(JSONObject)ApiClient.request(server,token,language,"/stats","GET",null,null);
             CounterWidget.acceptStats(this,server,token,stats);
         }catch(Exception error){

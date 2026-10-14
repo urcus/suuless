@@ -20,14 +20,14 @@ try{
     await page.waitForFunction(days=>document.querySelector('#history-availability').hidden===(days>=90)&& (days>=90||document.querySelector('#history-availability').textContent.includes(days+' days')),days);
     assert.equal(await option30.isDisabled(),days<30);assert.equal(await option90.isDisabled(),days<90);
   }
-  await page.locator('#preset').selectOption('90');
+  await page.locator('[data-view=analysis]').click();await page.locator('#preset').selectOption('90');
   await page.waitForFunction(()=>document.querySelector('#daily-table').children.length===90);
   await context.request.delete(base+'/api/cigarettes/'+oldest,{headers});await page.locator('#refresh').click();
   await page.waitForFunction(()=>document.querySelector('#preset').value==='7'&&document.querySelector('#daily-table').children.length===7);
   for(const [quantity,day] of [[8,'01'],[2,'03'],[4,'04']])assert.equal((await context.request.post(base+'/api/cigarettes',{headers,data:{quantity,occurred_at:`2025-01-${day}T12:00:00Z`}})).status(),201);
   await page.goto(base);await page.evaluate(token=>sessionStorage.setItem('stop-clop-token',token),auth.token);await page.reload();
   await page.waitForFunction(()=>document.querySelector('#today-count').textContent==='0');
-  await page.locator('#start-date').fill('2025-01-03');await page.locator('#end-date').fill('2025-01-04');
+  await page.locator('[data-view=analysis]').click();await page.locator('#preset').selectOption('custom');await page.locator('#start-date').fill('2025-01-03');await page.locator('#end-date').fill('2025-01-04');
   await page.locator('#range-form button').click();await page.waitForFunction(()=>document.querySelector('#analysis-average-quantity').textContent==='3');
   assert.match(await page.locator('#analysis-average-cost').textContent(),/1\.80/);
   assert.match(await page.locator('#analysis-comparison').textContent(),/-2.*-25%/);
@@ -51,7 +51,7 @@ try{
   await page.locator('#chart-currency').selectOption('JPY');assert.match(await page.locator('#chart .bar-column').last().getAttribute('title'),/30/);
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:'test-results/analysis-mobile.png',fullPage:true});
-  await page.locator('#start-date').fill('2024-01-01');await page.locator('#end-date').fill('2024-01-02');await page.locator('#range-form button').click();
+  await page.locator('[data-view=analysis]').click();await page.locator('#preset').selectOption('custom');await page.locator('#start-date').fill('2024-01-01');await page.locator('#end-date').fill('2024-01-02');await page.locator('#range-form button').click();
   await page.waitForFunction(()=>document.querySelector('#analysis-average-quantity').textContent==='0');
   assert.ok(!(await page.locator('.analysis').allTextContents()).join(' ').match(/NaN|Infinity/));assert.deepEqual(errors,[]);
   console.log('Web analysis OK: daily deltas, previous period, historical costs, mixed currencies, zero baseline and mobile layout.');

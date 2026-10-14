@@ -24,7 +24,8 @@ def main():
         while not stopped:
             try:
                 dispatch(conn, public, internal)
-                Path('/tmp/push-worker-health').touch()
+                # non-secret health marker in the worker container's temporary filesystem.
+                Path('/tmp/push-worker-health').touch()  # nosec B108
             except sqlite3.Error:
                 print('Push dispatcher: database temporarily unavailable', flush=True)
             time.sleep(2)

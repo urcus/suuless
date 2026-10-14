@@ -78,7 +78,9 @@ public final class MainActivity extends Activity {
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(Ui.PAPER);
         root.setOnApplyWindowInsetsListener((v,insets)->{v.setPadding(insets.getSystemWindowInsetLeft(),insets.getSystemWindowInsetTop(),insets.getSystemWindowInsetRight(),insets.getSystemWindowInsetBottom());return insets;});
         LinearLayout header=new LinearLayout(this);header.setGravity(android.view.Gravity.CENTER_VERTICAL);header.setPadding(dp(24),dp(14),dp(24),dp(6));
-        TextView brand=Ui.label(this,"◉  stop clop",20,Ui.INK,true);header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
+        ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.ic_brand);logo.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        LinearLayout.LayoutParams logoSize=new LinearLayout.LayoutParams(dp(36),dp(36));logoSize.setMarginEnd(dp(10));header.addView(logo,logoSize);
+        TextView brand=Ui.label(this,t("app_name"),20,Ui.INK,true);header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
         if(!page.equals("login")&&!page.equals("entry")){
             Button refresh=Ui.button(this,"↻",false,()->{if(!busy)reload();});refresh.setContentDescription(t("refresh"));header.addView(refresh,new LinearLayout.LayoutParams(dp(48),dp(48)));
         }
@@ -167,6 +169,7 @@ public final class MainActivity extends Activity {
         EditText address = input(t("server_address"), server.isEmpty() ? "https://" : server, InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         EditText username = input(t("username"), "", InputType.TYPE_CLASS_TEXT);
         EditText password = input(t("password"), "", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        EditText email = input(t("registration_email"), "", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
         text(t("password_help"), 13);
         for (boolean register : new boolean[]{false, true}) {
             button(register ? t("register") : t("login"), () -> {
@@ -176,9 +179,10 @@ public final class MainActivity extends Activity {
                         uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null || !uri.getPath().isEmpty())
                         throw new Exception(t("server_address_error"));
                     server = base;
-                    JSONObject payload = new JSONObject().put("username", username.getText().toString()).put("password", password.getText().toString()).put("language", language);
+                    JSONObject payload = new JSONObject().put("username", username.getText().toString()).put("password", password.getText().toString()).put("language", language).put("client", "android");
                     perform(() -> {
                         if (register) {
+                            payload.put("email", email.getText().toString().trim());
                             JSONObject choices = get("/config");
                             String detected = java.util.TimeZone.getDefault().getID();
                             detected = choices.getJSONObject("timezone_aliases").optString(detected, detected);
@@ -188,24 +192,36 @@ public final class MainActivity extends Activity {
                         }
                         return api(register ? "/auth/register" : "/auth/login", "POST", payload, null);
                     }, value -> {
+                        if (((JSONObject)value).optBoolean("activation_required")) { password.setText(""); setStatus(t("email_requested")); return; }
                         token = ((JSONObject)value).getString("token"); TokenStore.save(this, token);
                         getPreferences(MODE_PRIVATE).edit().putString("server", server).apply(); password.setText(""); dashboard();
                     });
                 } catch (Exception e) { setStatus(e.getMessage()); }
             });
         }
+        button(t("forgot_password"), () -> {
+            try {
+                URI url=new URI(address.getText().toString().trim().replaceAll("/+$", ""));
+                if(url.getHost()==null || !("https".equals(url.getScheme())||"http".equals(url.getScheme())) || url.getUserInfo()!=null || url.getQuery()!=null || url.getFragment()!=null || !url.getPath().isEmpty())throw new Exception(t("server_address_error"));
+                startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse(url.toString()+"/account?mode=forgot")));
+            }catch(Exception e){setStatus(e.getMessage());}
+        });
         button(t("language") + " · " + language, () -> new AlertDialog.Builder(this).setTitle(t("language"))
             .setItems(new String[]{"English", "Français", "日本語"}, (dialog, index) -> {
                 server = address.getText().toString(); setLanguage(new String[]{"en","fr","ja"}[index]); login();
             }).show());
 
     }
+    private void openCoaching(boolean craving){startActivity(new android.content.Intent(this,CoachingActivity.class).putExtra("craving",craving));}
+    @Override protected void onNewIntent(android.content.Intent intent){super.onNewIntent(intent);setIntent(intent);if(!busy&&!token.isEmpty()&&intent.getBooleanExtra("open_coaching_craving",false)){intent.removeExtra("open_coaching_craving");openCoaching(true);}}
     private String range() { return "?start=" + rangeStart + "&end=" + rangeEnd; }
     private void dashboard(){loadSnapshot("dashboard");}
     private void analytics(){loadSnapshot("analysis");}
     private void loadSnapshot(String target){
         page=target;screen(t(target.equals("dashboard")?"nav_today":"nav_analysis"));
         perform(()->{
+            JSONObject me=get("/me");
+            if("admin".equals(me.optString("role")))return new JSONObject().put("admin",true);
             JSONObject prefs=get("/settings");zone=prefs.getString("timezone");
             LocalDate end=LocalDate.parse(prefs.getString("local_today"));localNow=prefs.getString("local_datetime");rangeEnd=end.toString();rangeStart=end.minusDays(days-1).toString();
             catalog=get("/config");JSONObject push;
@@ -214,9 +230,15 @@ public final class MainActivity extends Activity {
             if(days>7&&historyDays<days){days=7;rangeStart=end.minusDays(6).toString();stats=get("/stats"+range());}
             return new JSONObject().put("push",push).put("settings",prefs).put("stats",stats);
         },value->{
-            snapshot=(JSONObject)value;setLanguage(snapshot.getJSONObject("settings").getString("language"));CounterWidget.acceptStats(this,server,token,snapshot.getJSONObject("stats"));
+            if(((JSONObject)value).optBoolean("admin")){
+                page="login";screen(t("admin_title"));text(t("admin_browser"),16);
+                button(t("admin_title"),()->startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse(server+"/admin"))));
+                button(t("logout"),()->perform(()->api("/auth/logout","POST",null,null),unused->{token="";TokenStore.clear(this);login();}));return;
+            }
+            snapshot=(JSONObject)value;setLanguage(snapshot.getJSONObject("settings").getString("language"));ReminderJobService.configure(this,snapshot.getJSONObject("settings"));CounterWidget.acceptStats(this,server,token,snapshot.getJSONObject("stats"));
             if(target.equals("analysis"))renderAnalysis();else renderToday();
-            if(snapshot.getJSONObject("push").optBoolean("enabled"))PushSync.automatic(this);
+            if(getIntent().getBooleanExtra("open_coaching_craving",false)){getIntent().removeExtra("open_coaching_craving");openCoaching(true);}
+            else if(snapshot.getJSONObject("push").optBoolean("enabled"))PushSync.automatic(this);
         });
     }
     private void renderToday() throws Exception {
@@ -225,9 +247,11 @@ public final class MainActivity extends Activity {
         LinearLayout hero=card(Ui.GREEN);cardText(hero,t("daily_consumption"),14,Ui.MINT,false);
         cardText(hero,number(today.getInt("quantity")),64,Ui.WHITE,true);cardText(hero,t("cigarettes"),16,Ui.MINT,false);
         Button add=Ui.button(this,t("plus_one"),false,()->{if(!busy)addOne();});hero.addView(add);
-        int target=prefs.getInt("daily_target");
+        hero.addView(Ui.button(this,t("craving_button"),false,()->{if(!busy)openCoaching(true);}));
+        button(t("journey_title"),()->openCoaching(false));
+        boolean chosen=prefs.has("coaching_goal")&&!prefs.isNull("coaching_goal");int target=chosen?prefs.getInt("coaching_goal"):prefs.getInt("daily_target");
         if(target>0){ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(target);progress.setProgress(Math.min(today.getInt("quantity"),target));progress.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.MINT));progress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff426858));progress.setContentDescription(t("target_label",number(target)));hero.addView(progress,new LinearLayout.LayoutParams(-1,dp(8)));}
-        cardText(hero,t("target_label",number(target)),12,Ui.MINT,false);
+        cardText(hero,chosen?t("goal_today",number(target),number(today.getInt("quantity"))):t("target_label",number(target)),12,Ui.MINT,false);
         if(pendingPayload!=null)button(t("retry_entry"),()->{try{submit(new JSONObject(pendingPayload));}catch(Exception e){setStatus(e.getMessage());}});
         LinearLayout cost=card(Ui.WHITE);cardText(cost,t("spent_today"),13,Ui.MUTED,false);cardText(cost,costs(today),28,Ui.INK,true);
         cardText(cost,t("average",number(analysis.getDouble("average_quantity_per_day")),number(days)),13,Ui.MUTED,false);
@@ -340,10 +364,11 @@ public final class MainActivity extends Activity {
             new android.app.DatePickerDialog(this,(picker,y,m,d)->new android.app.TimePickerDialog(this,(clock,h,min)->date.setText(LocalDateTime.of(y,m+1,d,h,min).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))),selected.getHour(),selected.getMinute(),true).show(),initial.getYear(),initial.getMonthValue()-1,initial.getDayOfMonth()).show();
         });
         text(t("entry_zone_note", zone), 14);
+        String[] triggerCodes={"","coffee","stress","meal","social","boredom","other"};ArrayList<String> triggerLabels=new ArrayList<>();for(String code:triggerCodes){String key=code.isEmpty()?"trigger_none":"trigger_"+code;triggerLabels.add(t(key));}Spinner trigger=select("craving_trigger",triggerLabels,0);
         button(t("save"), () -> {
             try {
                 LocalDateTime local = LocalDateTime.parse(date.getText().toString(), DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm").withResolverStyle(java.time.format.ResolverStyle.STRICT));
-                submit(new JSONObject().put("quantity", Integer.parseInt(quantity.getText().toString())).put("source", "android").put("occurred_at_local", local.toString()));
+                submit(new JSONObject().put("quantity", Integer.parseInt(quantity.getText().toString())).put("source", "android").put("occurred_at_local", local.toString()).put("trigger",triggerCodes[trigger.getSelectedItemPosition()]));
             } catch (Exception e) { setStatus(t("invalid_input")); }
         });
         button(t("back"), this::dashboard);
@@ -414,6 +439,27 @@ public final class MainActivity extends Activity {
             dialog.show();
         } catch (Exception error) { setStatus(t("invalid_input")); }
     }
+    private void confirmAccountDeletion() {
+        LinearLayout fields=new LinearLayout(this);fields.setOrientation(LinearLayout.VERTICAL);fields.setPadding(dp(24),dp(12),dp(24),0);
+        fields.addView(Ui.label(this,t("account_delete_note"),14,Ui.MUTED,false));
+        EditText password=new EditText(this);password.setHint(t("password"));password.setContentDescription(t("password"));
+        password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        password.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(256)});fields.addView(password);
+        CheckBox confirm=new CheckBox(this);confirm.setText(t("account_delete_confirm"));fields.addView(confirm);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(t("delete_account")).setView(fields)
+            .setNegativeButton(t("back"),null).setPositiveButton(t("delete_account_permanently"),null).create();
+        dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+            if(password.getText().length()==0||!confirm.isChecked()){password.setError(t("account_delete_invalid"));return;}
+            final String secret=password.getText().toString();password.setText("");dialog.dismiss();
+            perform(()->api("/me","DELETE",new JSONObject().put("password",secret).put("confirm",true),null),unused->{
+                token="";pendingKey=null;pendingPayload=null;snapshot=null;
+                TokenStore.clear(this);PushSync.disable(this);
+                for(String name:new String[]{"coaching-pending","coaching-reminders","counter-widget"})getSharedPreferences(name,MODE_PRIVATE).edit().clear().apply();
+                CounterWidget.enqueue(this,false);login();Toast.makeText(this,t("account_deleted"),Toast.LENGTH_LONG).show();
+            });
+        }));dialog.show();
+    }
+
     private void settings() {
         page = "settings"; screen(t("my_preferences"));
         perform(() -> new JSONObject().put("prefs", get("/settings")).put("catalog", get("/config")), value -> {
@@ -473,6 +519,7 @@ public final class MainActivity extends Activity {
             else button(t("push_enable"),()->{PushSync.enable(this);settings();});
             button(t("widget_add_home"),()->{android.appwidget.AppWidgetManager manager=android.appwidget.AppWidgetManager.getInstance(this);if(manager.isRequestPinAppWidgetSupported())manager.requestPinAppWidget(new android.content.ComponentName(this,CounterWidget.class),null,null);else Toast.makeText(this,t("widget_pin_help"),Toast.LENGTH_LONG).show();});
             text(t("account_preferences"),20);text(server,13);
+            button(t("delete_account"),()->{if(!busy)confirmAccountDeletion();});
             button(t("logout"),()->perform(()->api("/auth/logout","POST",null,null),unused->{token="";pendingKey=null;pendingPayload=null;snapshot=null;TokenStore.clear(this);login();}));
         });
     }

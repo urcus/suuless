@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 600" role="img" aria-labelledby="architecture-title architecture-desc" id="architecture-root"><title id="architecture-title">SuuLess architecture</title><desc id="architecture-desc">The browser, Android app and Stream Deck button share a Flask API running in Docker, with account data stored in a SQLite volume.</desc><defs>
+      <style>#architecture-root { --paper:#f5f5f5;--ink:#2d3142;--muted:#4f5d75;--accent:#eb6c36 }
+      #architecture-root { color: var(--ink); font-family: Geist,Arial,sans-serif; }
+      #architecture-root .diagram-container { width:100%;overflow-x:auto }
+      #architecture-root .name { font:600 16px Geist,Arial,sans-serif;fill:var(--ink) }
+      #architecture-root .sub { font:12px 'Geist Mono',monospace;fill:var(--muted) }
+      #architecture-root .node { fill:var(--paper);stroke:#bfc0c0 }
+      #architecture-root .focal { fill:#f7e9e2;stroke:var(--accent) }
+      #architecture-root .wire { fill:none;stroke:#4f5d75;stroke-width:1.5;marker-end:url(#architecture-architecture-arrow) }
+      #architecture-root .diagram-container { overflow:visible }</style><marker id="architecture-architecture-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#4f5d75"/></marker></defs>
+<rect x="380" y="120" width="540" height="352" rx="8" fill="#ececec" stroke="#bfc0c0" stroke-dasharray="4 3"/><text x="404" y="152" class="sub">DOCKER SERVICE · PORT 8080</text>
+<path class="wire" d="M280 164 H316 Q324 164 324 172 V252 Q324 260 332 260 H416"/>
+<path class="wire" d="M280 292 H416"/>
+<path class="wire" d="M280 420 H348 Q356 420 356 412 V332 Q356 324 364 324 H416"/>
+<path class="wire" d="M640 292 H704"/>
+<rect class="node" x="56" y="124" width="224" height="80" rx="6"/><text x="80" y="156" class="name">Web interface</text><text x="80" y="184" class="sub">HTML · CSS · JavaScript</text>
+<rect class="node" x="56" y="252" width="224" height="80" rx="6"/><text x="80" y="284" class="name">Android app</text><text x="80" y="312" class="sub">Java · app + widget</text>
+<rect class="node" x="56" y="380" width="224" height="80" rx="6"/><text x="80" y="412" class="name">Stream Deck button</text><text x="80" y="440" class="sub">POST /api/cigarettes</text>
+<rect class="focal" x="416" y="228" width="224" height="128" rx="6"/><text x="440" y="260" class="name">API &amp; web assets</text><text x="440" y="292" class="sub">Flask · Gunicorn</text><text x="440" y="324" class="sub">Authorization: Bearer</text>
+<rect class="node" x="704" y="244" width="184" height="96" rx="6"/><text x="724" y="276" class="name">SQLite</text><text x="724" y="304" class="sub">/data/stopclop.db</text><text x="724" y="324" class="sub">Persistent volume</text>
+<text x="416" y="404" class="sub">Accounts · prices · entries · tokens</text><text x="416" y="428" class="sub">Requests scoped by user_id</text>
+<line x1="56" y1="536" x2="904" y2="536" stroke="#bfc0c0"/><path class="wire" d="M56 564 H88"/><text x="104" y="568" class="sub">Request / data access</text><rect class="focal" x="472" y="552" width="20" height="20" rx="2"/><text x="504" y="568" class="sub">Shared entry point</text>
+</svg>

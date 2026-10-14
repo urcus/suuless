@@ -30,9 +30,10 @@ async function setLanguage(code, updatePreference=true) {
   document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));
   document.querySelectorAll('[data-i18n-aria]').forEach(el=>el.setAttribute('aria-label',t(el.dataset.i18nAria)));
   if(availableHistoryDays!==undefined)updatePeriodAvailability(availableHistoryDays);
-  $('header-language').value=code; if(updatePreference)$('language').value=code; authLabels();
+  $('header-language').value=code; if(updatePreference)$('language').value=code; authLabels();renderNavigation();
 }
 function disconnected() {
+  resetCoaching();showView("today");history.replaceState(null,"",location.pathname+location.search);
   preferenceBaseline=null;pendingEntry=null; token=''; sessionStorage.removeItem('stop-clop-token'); settings=null;
   $('auth').hidden=false; $('dashboard').hidden=true; $('identity').hidden=true;
   $('token-value').value=''; $('new-token').hidden=true;
@@ -51,7 +52,7 @@ async function api(path,method='GET',data,extra={}) {
     const error=new Error(payload.error||t('http_error',response.status)); error.status=response.status; throw error;
   }
   if(response.status===204)return null;
-  return path.startsWith('/export')?response.blob():response.json();
+  return path.split('?')[0].endsWith('.csv')?response.blob():response.json();
 }
 function action(id,event,callback) {
   $(id).addEventListener(event,async e=>{
@@ -95,6 +96,7 @@ async function loadCatalog(){
   const nextCatalog=await api('/config');
   const selected=$('currency').value||settings?.currency||'EUR';
   catalog=nextCatalog;$('auth-switch').hidden=!catalog.registration_enabled;
+  $('auth-email-label').hidden=!(registering&&catalog.email_required);$('auth-email').required=registering&&catalog.email_required;
   $('currency').replaceChildren(...catalog.currencies.map(c=>new Option(`${c.code} — ${c.name}`,c.code,false,c.code===selected)));
   timezoneOptions();pricePrecision();
   $('initial-timezone').textContent=t('initial_timezone',detectedTimezone());
@@ -130,6 +132,7 @@ function preferenceChanges(){
 async function loadHistory(append=false){
   if(!append){historyOffset=0;$('history').replaceChildren();}
   const data=await api(`/cigarettes?${query()}&limit=20&offset=${historyOffset}`);
+  $('history-range').textContent=dayLabel($('start-date').value)+' — '+dayLabel($('end-date').value);
   $('history-total').textContent=data.total?t('history_total',number(data.total)):t('no_entries');
   for(const row of data.items){
     const li=document.createElement('li'),desc=document.createElement('div');
@@ -163,12 +166,14 @@ async function refresh(){
     $('preset').value='7';setRange(7);data=await api(`/stats?${query()}`);
   }
   $('today-count').textContent=number(data.today.quantity);$('today-cost').textContent=t('today_cost',costs(data.today));
+  $('selected-period').textContent=dayLabel($('start-date').value)+' — '+dayLabel($('end-date').value);
   $('period-count').textContent=number(data.period.quantity);$('period-cost').textContent=costs(data.period);
   $('average').textContent=t('average',number(data.period.average_per_day),number(data.period.days));
   $('all-time').textContent=`${t('quantity_count',number(data.total.quantity))} · ${costs(data.total)}`;
   $('target-label').textContent=t('target_label',number(settings.daily_target));$('timezone-label').textContent=t('timezone_label',data.timezone);
   analysisData=data;renderAnalysis();
   await loadHistory();
+  await loadCoaching();
 }
 let analysisData;
 const signed=value=>(value>0?'+':'')+number(value);
@@ -211,19 +216,40 @@ action('chart-measure','change',renderAnalysis);
 action('chart-currency','change',renderAnalysis);
 action('chart-smooth','change',renderAnalysis);
 async function loadTokens(){
-  const rows=await api('/tokens');$('tokens').replaceChildren();
+  const rows=await api('/tokens');for(const id of ['tokens','sessions','legacy-tokens'])$(id).replaceChildren();
   for(const row of rows){
-    const li=document.createElement('li'),name=document.createElement('div');name.textContent=row.name+(row.current?t('current_session'):'');
-    name.append(cell(t('expires',new Date(row.expires_at).toLocaleDateString(locale)),'small'));
-    const button=document.createElement('button');button.className='danger';button.textContent=t('revoke');
+    const session=row.kind==='session',legacy=row.kind==='legacy';
+    const li=document.createElement('li'),name=document.createElement('div');
+    name.textContent=(session?t(row.client==='android'?'session_android':'session_web'):row.name)+(row.current?t('current_session'):'');
+    const format=value=>new Date(value).toLocaleString(locale,{dateStyle:'medium',timeStyle:'short',timeZone:settings?.timezone||'UTC'});
+    if(row.created_at)name.append(cell(t('session_created',format(row.created_at)),'small'));
+    name.append(cell(t('expires',format(row.expires_at)),'small'));
+    const button=document.createElement('button');button.className='danger';button.textContent=t(session?'logout':'revoke');
     button.onclick=async()=>{
       if(!confirm(t('revoke_confirm')))return;button.disabled=true;
       try{await api(`/tokens/${row.id}`,'DELETE');if(row.current)disconnected();else await loadTokens();}catch(err){notice(err.message,true);button.disabled=false;}
-    };li.append(name,button);$('tokens').append(li);
+    };li.append(name,button);$(session?'sessions':legacy?'legacy-tokens':'tokens').append(li);
   }
+  const sessions=rows.filter(row=>row.kind==='session');
+  $('session-count').textContent=number(sessions.length);
+  $('keys-empty').hidden=rows.some(row=>row.kind==='api');
+  $('sessions-empty').hidden=sessions.length>0;
+  $('legacy-access').hidden=!rows.some(row=>row.kind==='legacy');
+  $('revoke-other-sessions').disabled=!sessions.some(row=>!row.current);
 }
+$('revoke-other-sessions').addEventListener('click',async()=>{
+  if(!confirm(t('revoke_other_confirm')))return;
+  $('revoke-other-sessions').disabled=true;
+  try{await api('/sessions/others','DELETE');await loadTokens();notice(t('other_sessions_revoked'));}
+  catch(err){notice(err.message,true);$('revoke-other-sessions').disabled=false;}
+});
+
 async function connected(){
-  const [me,prefs]=await Promise.all([api('/me'),api('/settings')]);
+  showView(location.hash.slice(1));
+  const me=await api('/me');
+  if(me.role==='admin'){location.replace('/admin');return;}
+  $('user-email-state').textContent=t(me.email_verified?'email_verified':'email_pending');$('user-email-form').elements.recovery_email.value=me.email||'';
+  const prefs=await api('/settings');
   await syncPreferences(prefs,true);
   $('username').textContent=me.username;$('auth').hidden=true;$('dashboard').hidden=false;$('identity').hidden=false;
   setRange(Number($('preset').value)||30);localInputNow();await Promise.all([refresh(),loadTokens()]);
@@ -235,14 +261,25 @@ action('header-language','change',async()=>{
   finally{$('header-language').value=locale;$('header-language').disabled=false;$('logout').disabled=false;}
 });
 action('auth-switch','click',()=>{
-  registering=!registering;authLabels();$('password-help').hidden=!registering;$('initial-timezone').hidden=!registering;
+  registering=!registering;authLabels();$('auth-email-label').hidden=!(registering&&catalog.email_required);$('auth-email').required=registering&&catalog.email_required;$('password-help').hidden=!registering;$('initial-timezone').hidden=!registering;
   const p=$('auth-form').elements.password;p.minLength=registering?12:1;p.autocomplete=registering?'new-password':'current-password';
 });
 action('auth-form','submit',async()=>{
-  const payload={...Object.fromEntries(new FormData($('auth-form'))),language:locale};
+  const payload={...Object.fromEntries(new FormData($('auth-form'))),language:locale,client:'web'};
   if(registering)payload.timezone=detectedTimezone();
   const response=await api(`/auth/${registering?'register':'login'}`,'POST',payload);
+  if(response.activation_required){notice(response.message);return;}
   token=response.token;sessionStorage.setItem('stop-clop-token',token);$('auth-form').reset();await connected();
+});
+action('delete-account-form','submit',async()=>{
+  const username=$('username').textContent;
+  try{await api('/me','DELETE',{password:$('delete-account-password').value,confirm:$('delete-account-confirm').checked});}
+  finally{$('delete-account-password').value='';}
+  for(const key of Object.keys(localStorage))if(key.startsWith('stop-clop-reminder-'+username+'-'))localStorage.removeItem(key);
+  sessionStorage.removeItem('stop-clop-craving-'+username);
+  disconnected();
+  for(const id of ['delete-account-form','journey-form','settings-form','entry-form'])$(id).reset();
+  notice(t('account_deleted'));
 });
 action('logout','click',async()=>{await api('/auth/logout','POST');disconnected();});
 async function saveEntry(payload){
@@ -254,12 +291,12 @@ async function saveEntry(payload){
 }
 action('plus-one','click',async()=>{await saveEntry({source:'web'});notice(t('entry_saved'));await refresh();});
 action('entry-form','submit',async()=>{
-  await saveEntry({quantity:Number($('quantity').value),occurred_at_local:$('occurred-at').value,source:'web'});
+  await saveEntry({quantity:Number($('quantity').value),occurred_at_local:$('occurred-at').value,source:'web',trigger:$('entry-trigger').value});
   localInputNow();notice(t('entry_saved'));await refresh();
 });
-action('preset','change',async()=>{if($('preset').value!=='custom'){setRange(Number($('preset').value));await refresh();}});
+action('preset','change',async()=>{$('range-form').hidden=$('preset').value!=='custom';if($('preset').value!=='custom'){setRange(Number($('preset').value));await refresh();}});
 action('range-form','submit',async()=>{$('preset').value='custom';await refresh();});
-action('refresh','click',async()=>{if($('preset').value!=='custom')setRange(Number($('preset').value));await refresh();});
+action('refresh','click',async()=>{if($('preset').value!=='custom')setRange(Number($('preset').value));await Promise.all([refresh(),loadTokens()]);});
 action('more-history','click',()=>loadHistory(true));
 action('timezone-search','input',()=>timezoneOptions());
 document.querySelector('.settings').addEventListener('toggle',()=>{
@@ -272,7 +309,9 @@ action('settings-form','submit',async()=>{
   notice(t('settings_saved'));await Promise.all([refresh(),loadTokens()]);
 });
 action('token-form','submit',async()=>{const result=await api('/tokens','POST',{name:$('token-name').value});$('token-value').value=result.token;$('new-token').hidden=false;await loadTokens();});
-action('export','click',async()=>{const blob=await api(`/export.csv?${query()}`),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='stop-clop.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+action('export','click',async()=>{const blob=await api(`/export.csv?${query()}`),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='suuless.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+initializeNavigation();
+initializeCoaching();
 (async()=>{await setLanguage(locale);await loadCatalog();if(token)await connected();})().catch(err=>notice(err.message,true));
 
 function renderHabits(a){
@@ -301,3 +340,9 @@ function renderHabits(a){
   $('projection-cost').textContent=costs(p);
   $('projection-note').textContent=p.sample_days?t('projection_note',number(p.sample_days)):t('projection_empty');
 }
+
+action('user-email-form','submit',async()=>{
+  const form=$('user-email-form');
+  try{const response=await api('/account/email','POST',{email:form.elements.recovery_email.value,password:form.elements.current_password.value});$('user-email-state').textContent=t('email_pending');notice(response.message);}
+  finally{form.elements.current_password.value='';}
+});

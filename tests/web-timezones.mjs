@@ -15,7 +15,7 @@ try{
   const token=await page.evaluate(()=>sessionStorage.getItem('stop-clop-token'));
   const headers={Authorization:`Bearer ${token}`};
   assert.equal((await(await context.request.get(base+'/api/settings',{headers})).json()).timezone,'Asia/Kathmandu');
-  await page.locator('.settings>summary').click();
+  await page.locator('[data-view=settings]').click();
   const count=await page.locator('#timezone option').count();assert.ok(count>300&&count<400);
   assert.equal(await page.locator('#timezone option[value="US/Eastern"]').count(),0);
   assert.match(await page.locator('#timezone option:checked').textContent(),/UTC\+05:45/);
@@ -29,12 +29,12 @@ try{
   await page.locator('#timezone-search').fill('Tokyo');await page.locator('#timezone').selectOption('Asia/Tokyo');
   await page.locator('#settings-form button').click();await waitText('#timezone-label','Asia/Tokyo');
   // Date input is now in the profile's zone, not in the browser's Kathmandu zone.
-  await page.locator('#occurred-at').fill('2025-01-02T00:30');await page.locator('#entry-form button').click();await waitText('#message','Consumption recorded');
+  await page.locator('[data-view=history]').click();await page.locator('#occurred-at').fill('2025-01-02T00:30');await page.locator('#entry-form button').click();await waitText('#message','Consumption recorded');
   const history=await(await context.request.get(base+'/api/cigarettes?start=2025-01-01&end=2025-01-03',{headers})).json();
   assert.equal(history.items[0].occurred_at,'2025-01-01T15:30:00.000000+00:00');
   // Preserve a legacy identifier, including on an unrelated settings update.
   assert.equal((await context.request.put(base+'/api/settings',{headers,data:{timezone:'US/Eastern'}})).status(),200);
-  await page.reload();await waitText('#timezone-label','US/Eastern');await page.locator('.settings>summary').click();
+  await page.reload();await waitText('#timezone-label','US/Eastern');await page.locator('[data-view=settings]').click();
   assert.equal(await page.locator('#timezone').inputValue(),'US/Eastern');
   assert.match(await page.locator('#timezone option:checked').textContent(),/UTC-0[45]:00/);
   await page.locator('#pack-price').fill('13');await page.locator('#settings-form button').click();await waitText('#message','Settings saved');

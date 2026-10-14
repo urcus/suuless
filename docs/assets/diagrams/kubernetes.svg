@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 600" role="img" aria-labelledby="kubernetes-title kubernetes-desc" id="kubernetes-root">
+<title id="kubernetes-title">SuuLess Kubernetes deployment</title><desc id="kubernetes-desc">An optional HTTPS ingress routes to an internal service and one SuuLess pod in its namespace, with SQLite on a persistent volume and temporary files in an emptyDir.</desc>
+<defs>
+      <style>#kubernetes-root { --paper:#f5f5f5;--ink:#2d3142;--muted:#4f5d75;--accent:#eb6c36 }
+      #kubernetes-root { color: var(--ink); }
+      #kubernetes-root .diagram-container { overflow-x:auto;width:100% }
+      #kubernetes-root .name { font:600 16px Arial,sans-serif;fill:#2d3142 }
+      #kubernetes-root .sub { font:12px monospace;fill:#4f5d75 }
+      #kubernetes-root .node { fill:#f5f5f5;stroke:#bfc0c0 }
+      #kubernetes-root .wire { fill:none;stroke:#4f5d75;stroke-width:1.5;marker-end:url(#kubernetes-kubernetes-arrow) }
+      #kubernetes-root .label { font:11px monospace;fill:#4f5d75 }
+      #kubernetes-root .diagram-container { overflow:visible }</style><marker id="kubernetes-kubernetes-arrow" viewBox="0 0 8 8" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#4f5d75"/></marker></defs>
+<rect x="32" y="168" width="896" height="340" rx="8" fill="#ececec" stroke="#bfc0c0" stroke-dasharray="4 4"/>
+<text x="56" y="196" class="sub">NAMESPACE stop-clop</text>
+<path class="wire" stroke-dasharray="5 4" d="M184 128 V240"/>
+<path class="wire" d="M320 284 H440"/>
+<path class="wire" d="M656 348 V404"/>
+<rect x="200" y="208" width="108" height="20" fill="#f5f5f5"/><text x="208" y="222" class="label">HTTP:8080</text>
+<rect x="332" y="252" width="96" height="20" fill="#f5f5f5"/><text x="380" y="266" class="label" text-anchor="middle">HTTP:8080</text>
+<rect x="676" y="364" width="116" height="20" fill="#f5f5f5"/><text x="684" y="378" class="label">MOUNT /DATA</text>
+<rect class="node" x="56" y="40" width="256" height="88" rx="6" stroke-dasharray="5 4"/><text x="80" y="72" class="name">Optional HTTPS ingress</text><text x="80" y="100" class="sub">Existing controller · TLS:443</text>
+<rect class="node" x="56" y="240" width="264" height="88" rx="6"/><text x="80" y="272" class="name">Service stop-clop</text><text x="80" y="300" class="sub">ClusterIP · port 8080</text>
+<rect x="440" y="228" width="432" height="120" rx="6" fill="#f7e9e2" stroke="#eb6c36"/>
+<text x="464" y="260" class="name">SuuLess pod</text><text x="832" y="260" class="sub">×1</text>
+<rect x="464" y="276" width="384" height="28" rx="4" fill="#ececec" stroke="#bfc0c0"/>
+<text x="476" y="296" class="sub">Your image · selected version / digest</text><text x="464" y="328" class="sub">UID 10001 · /tmp: emptyDir · Recreate</text>
+<rect class="node" x="440" y="404" width="432" height="76" rx="6"/><text x="464" y="436" class="name">PVC stop-clop-data</text><text x="464" y="460" class="sub">SQLite · 1 GiB · ReadWriteOnce</text>
+<text x="56" y="408" class="sub">Local check:</text><text x="56" y="432" class="sub">kubectl port-forward</text><text x="56" y="456" class="sub">service/stop-clop 8080:8080</text>
+<line x1="32" y1="532" x2="928" y2="532" stroke="#bfc0c0"/>
+<path class="wire" d="M48 564 H88"/><text x="104" y="568" class="sub">Request / storage access</text><path class="wire" stroke-dasharray="5 4" d="M464 564 H504"/><text x="520" y="568" class="sub">Optional HTTPS path</text>
+</svg>
