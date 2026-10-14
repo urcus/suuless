@@ -69,8 +69,3 @@ Both platforms have independent CI: GitLab publishes to Harbor and GitHub to GHC
 Distributed under the [MIT License](LICENSE).
 
 
-## Naming and upgrade compatibility
-
-The project and new release artifacts use **SuuLess** (`suuless`); the Japanese application name is **スーレス**. Development takes place on the private GitLab repository; [GitHub](https://github.com/urcus/suuless) hosts the public mirror.
-
-Existing installations retain their technical identifiers: Android `eu.cormerais.stopclop` and its signing key, browser storage keys, SQLite `stopclop.db`, and existing Compose/Kubernetes resource and volume names. These identifiers are not the displayed application name. Keeping them preserves upgrades, sessions and data. Compose explicitly retains the historical project name `stop-clop`; if an installation uses a custom project name (`-p` or `COMPOSE_PROJECT_NAME`), keep using that same value. No existing volume, domain, database or installed application is renamed by this branding change.
