@@ -20,6 +20,10 @@ La devise initiale est l’euro et peut être changée dans les réglages. Les s
 
 Le filtre de dates pilote le graphique, les moyennes et le tableau quotidien. Le sélecteur du graphique permet de passer des cigarettes aux dépenses ; les devises restent séparées, sans conversion. La ligne pointillée indique la moyenne quotidienne de la période.
 
+Le lissage optionnel affiche la moyenne mobile des sept derniers jours, bornée à la période sélectionnée (moins de sept jours au début). Les graphiques horaires regroupent les quantités selon l’heure locale du compte ; une saisie groupée est affectée intégralement à son heure enregistrée. Les heures répétées au passage à l’heure d’hiver sont regroupées. La moyenne par jour de semaine est divisée par le nombre d’occurrences calendaires du jour dans la période, y compris les jours sans saisie. Ces répartitions incluent la journée en cours, encore partielle.
+
+Une estimation sur 30 jours multiplie par 30 la moyenne des journées terminées de la période sélectionnée, sans aujourd’hui. Les montants historiques restent séparés par devise. Ce scénario suppose que le rythme de saisie et les coûts observés se poursuivent ; il ne prédit pas la consommation future. Sans journée terminée, aucune estimation n’est affichée. Ces analyses sont disponibles sur le web et Android, avec une alternative textuelle aux graphiques.
+
 Chaque journée affiche la consommation, le coût et leur écart à la moyenne, en valeur et en pourcentage. La synthèse compare les totaux à ceux de la période immédiatement précédente, de même nombre de jours calendaires dans le fuseau du compte. Par exemple, du 8 au 14 est comparé au 1 au 7. Les journées sans saisie comptent pour zéro dans les moyennes. Le jour courant reste inclus et est signalé comme incomplet. Un pourcentage sans référence non nulle est affiché « — » ; les différences absolues restent disponibles. Les périodes qui précèdent la limite de saisie du 1er janvier 2000 ne sont pas comparées.
 
 Les coûts utilisent le tarif historique de chaque saisie. Les calculs précèdent l’arrondi monétaire d’affichage ; des écarts minimes peuvent donc apparaître lorsqu’on additionne des montants affichés déjà arrondis.
@@ -177,6 +181,14 @@ L’ancien champ `pack_price_cents` est conservé pour compatibilité et représ
 Ajout : `{"quantity":1,"occurred_at":"2026-01-10T14:30:00+01:00","source":"android"}`. Tous les champs sont optionnels. Quantité : entier 1–200 ; source : `web`, `android`, `api` ou `streamdeck` (indicative, pas une preuve d’origine). Les dates futures et antérieures à 2000 sont refusées. Une exception compense le décalage des horloges des appareils : un `occurred_at` explicite jusqu’à 5 secondes en avance est ramené à l’heure de réception du serveur, sans enregistrer de date future. Les saisies manuelles `occurred_at_local` restent strictes. Sans date, l’heure serveur est utilisée. Une date `occurred_at` explicite doit comporter son décalage UTC. Les interfaces web et Android envoient `occurred_at_local` sans décalage : le serveur l’interprète dans le fuseau du compte. Ces champs sont mutuellement exclusifs. Une heure locale inexistante au changement d’heure est refusée ; une heure répétée utilise la première occurrence. Les réponses d’historique incluent aussi `local_datetime` avec le décalage calculé par le serveur.
 
 `GET /api/stats` conserve ses champs existants et ajoute `analysis` : `average_quantity_per_day`, `average_cost_per_day` (par devise), `days_with_entries`, `minimum_quantity`, `maximum_quantity`, `includes_today`, `previous_period`, `comparison` et `daily`. Les comparaisons contiennent `quantity_delta`, `quantity_percent`, `cost_deltas` et `cost_percent` (dictionnaires par devise). Dans `daily`, ces écarts se rapportent à la moyenne de la période ; dans `comparison`, ils comparent les totaux à la période précédente. Un pourcentage dont la référence vaut zéro est `null`. Si la période précédente sort des dates prises en charge, ses bornes et les écarts de quantité sont `null`, `days` vaut zéro et les dictionnaires d’écarts monétaires sont vides.
+
+Les champs supplémentaires de `analysis` sont :
+
+- `trend` : moyenne mobile sur au plus sept jours, avec `date`, `window_days`, `quantity`, `costs` et écarts à la moyenne de période (`quantity_delta`, `cost_deltas`).
+- `hourly` : 24 objets `hour` (0–23), `quantity`, `share_percent` ; quantités cumulées dans le fuseau du compte.
+- `weekdays` : sept objets `weekday` (0=lundi), `quantity`, `days` et `average` ; `average` vaut `null` quand ce jour ne figure pas dans la période.
+- `projection` : `days` (30), `sample_days` (journées terminées), `quantity` et `costs` par devise ; sans échantillon, `quantity` vaut `null` et `costs` est vide.
+
 
 `/api/stats`, `/api/cigarettes` et `/api/export.csv` acceptent `?start=2026-01-01&end=2026-01-31`, bornes incluses dans le fuseau du compte. La période par défaut est de 30 jours jusqu’à aujourd’hui ; maximum 366 jours, sans jour futur. Le total global et le total du jour sont indépendants de ce filtre. L’historique accepte aussi `limit` (1–500, défaut 100) et `offset` (défaut 0), et retourne `{items,total}`.
 

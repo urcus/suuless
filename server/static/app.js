@@ -160,6 +160,7 @@ const percent=value=>value===null?'—':signed(value)+'%';
 function renderAnalysis(){
   if(!analysisData)return;
   const a=analysisData.analysis,comparison=a.comparison;
+  renderHabits(a);
   $('analysis-average-quantity').textContent=number(a.average_quantity_per_day);
   $('analysis-average-cost').textContent=costs({costs:a.average_cost_per_day});
   $('analysis-range').textContent=t('analysis_range',number(a.minimum_quantity),number(a.maximum_quantity),number(a.days_with_entries));
@@ -173,7 +174,9 @@ function renderAnalysis(){
   $('chart-currency-label').hidden=!costMode;
   $('chart').setAttribute('aria-label',t(costMode?'cost':'daily_consumption'));
   const average=costMode?a.average_cost_per_day[code]:a.average_quantity_per_day;
-  const values=a.daily.map(day=>costMode?day.costs[code]:day.quantity),max=Math.max(1,average,...values);
+  const smooth=$('chart-smooth').checked,series=smooth?a.trend:a.daily;
+  $('trend-note').hidden=!smooth;
+  const values=series.map(day=>costMode?day.costs[code]:day.quantity),max=Math.max(1,average,...values);
   $('chart').replaceChildren();$('daily-table').replaceChildren();
   for(const [index,day] of a.daily.entries()){
     const value=values[index],col=document.createElement('div');col.className='bar-column';
@@ -190,6 +193,7 @@ function renderAnalysis(){
 }
 action('chart-measure','change',renderAnalysis);
 action('chart-currency','change',renderAnalysis);
+action('chart-smooth','change',renderAnalysis);
 async function loadTokens(){
   const rows=await api('/tokens');$('tokens').replaceChildren();
   for(const row of rows){
@@ -254,3 +258,30 @@ action('settings-form','submit',async()=>{
 action('token-form','submit',async()=>{const result=await api('/tokens','POST',{name:$('token-name').value});$('token-value').value=result.token;$('new-token').hidden=false;await loadTokens();});
 action('export','click',async()=>{const blob=await api(`/export.csv?${query()}`),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='stop-clop.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
 (async()=>{await setLanguage(locale);await loadCatalog();if(token)await connected();})().catch(err=>notice(err.message,true));
+
+function renderHabits(a){
+  $('habits-note').textContent=t('habits_note',analysisData.timezone);
+  $('habits-empty').hidden=a.hourly.some(hour=>hour.quantity>0);
+  $('hourly-chart').replaceChildren();$('hourly-figures').replaceChildren();
+  const max=Math.max(1,...a.hourly.map(hour=>hour.quantity));
+  for(const hour of a.hourly){
+    const label=t('hourly_value',String(hour.hour).padStart(2,'0'),number(hour.quantity),number(hour.share_percent));
+    const col=document.createElement('div');col.className='bar-column'+(hour.quantity===max?' peak':'');col.title=label;col.setAttribute('role','listitem');col.setAttribute('aria-label',label);
+    const slot=document.createElement('div');slot.className='bar-slot';
+    const bar=document.createElement('div');bar.className='bar';bar.style.height=`${hour.quantity/max*135}px`;slot.append(bar);
+    col.append(cell(number(hour.quantity),'b'),slot,cell(String(hour.hour).padStart(2,'0'),'span'));$('hourly-chart').append(col);
+    $('hourly-figures').append(cell(label,'li'));
+  }
+  const weekdayMax=Math.max(1,...a.weekdays.map(day=>day.average||0));$('weekday-chart').replaceChildren();
+  for(const day of a.weekdays){
+    const label=new Intl.DateTimeFormat(locale,{weekday:'long',timeZone:'UTC'}).format(new Date(Date.UTC(2024,0,1+day.weekday)));
+    const row=document.createElement('div');row.className='habit-row';
+    const text=day.average===null?label+' · '+t('no_sample'):t('weekday_value',label,number(day.average),number(day.days));
+    row.append(cell(text,'span'));
+    const meter=document.createElement('meter');meter.max=weekdayMax;meter.value=day.average||0;meter.setAttribute('aria-label',text);row.append(meter);$('weekday-chart').append(row);
+  }
+  const p=a.projection;
+  $('projection-quantity').textContent=p.quantity===null?'—':t('quantity_count',number(p.quantity));
+  $('projection-cost').textContent=costs(p);
+  $('projection-note').textContent=p.sample_days?t('projection_note',number(p.sample_days)):t('projection_empty');
+}

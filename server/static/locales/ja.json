@@ -192,5 +192,20 @@
   "time_preferences": "タイムゾーン",
   "sync_preferences": "ウィジェットと同期",
   "account_preferences": "アカウント",
-  "choose_datetime": "日時を選択"
+  "choose_datetime": "日時を選択",
+  "habits_title": "喫煙する時間帯",
+  "habits_note": "{0} の現地時刻で集計。まとめて記録した本数は記録時刻に計上されます。本日は途中経過です。夏時間終了時に繰り返す時間帯は合算されます。",
+  "hourly_title": "時間帯別",
+  "hourly_value": "{0}:00〜{0}:59 · {1} 本 · 期間全体の {2}%",
+  "weekday_title": "曜日別",
+  "weekday_note": "各曜日の日数で割った平均です。記録のない日も含みます。",
+  "weekday_value": "{0} · 1日 {1} 本 · {2} 日間",
+  "projection_title": "このペースで30日間続けた場合",
+  "projection_note": "選択期間の完了した {0} 日間（記録のない日を含む）を基にした目安です。本日は除外します。将来の予測や通貨換算ではありません。",
+  "projection_empty": "目安を表示するには、完了した日を含む期間を選択してください。",
+  "habits_empty": "この期間に記録はありません。",
+  "hourly_figures": "全時間帯の数値を見る",
+  "no_sample": "この期間に該当する日がありません",
+  "trend_smooth": "7日間の平均で表示",
+  "trend_note": "選択期間内の直近7日間の平均です。期間の初めは7日未満で計算します。本日は途中経過です。"
 }

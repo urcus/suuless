@@ -192,5 +192,20 @@
   "time_preferences": "Your time zone",
   "sync_preferences": "Widget & synchronization",
   "account_preferences": "Your account",
-  "choose_datetime": "Choose date & time"
+  "choose_datetime": "Choose date & time",
+  "habits_title": "When do you smoke?",
+  "habits_note": "Recorded quantities in {0}. Grouped entries count at their recorded time. Today is incomplete; repeated DST hours are combined.",
+  "hourly_title": "By hour",
+  "hourly_value": "{0}:00–{0}:59 · {1} cigarettes · {2}% of the period",
+  "weekday_title": "By weekday",
+  "weekday_note": "Average per calendar occurrence of each weekday, including days with no entries.",
+  "weekday_value": "{0} · {1} / day · {2} days",
+  "projection_title": "At this pace, over 30 days",
+  "projection_note": "Estimate from {0} completed calendar days in the selected period, including days with no entries. Today is excluded. This is not a forecast or a currency conversion.",
+  "projection_empty": "Select a period with at least one completed day to see an estimate.",
+  "habits_empty": "No cigarettes recorded in this period.",
+  "hourly_figures": "View all hourly figures",
+  "no_sample": "No days in this period",
+  "trend_smooth": "Smooth over 7 days",
+  "trend_note": "Trailing 7-day average, limited to the selected period. The first points use fewer days; today remains provisional."
 }

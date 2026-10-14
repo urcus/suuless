@@ -39,6 +39,19 @@ class ApiTest(unittest.TestCase):
         data.update(overrides)
         return self.client.put('/api/settings', json=data, headers=self.auth)
 
+    def test_habits_use_account_zone_range_and_isolation(self):
+        self.settings(timezone='Asia/Kathmandu')
+        self.add({'quantity': 5, 'occurred_at': '2025-01-01T18:30:00Z'})
+        self.add({'quantity': 20, 'occurred_at': '2025-01-02T18:30:00Z'})
+        other = self.register('other-habits')
+        self.add({'quantity': 100, 'occurred_at': '2025-01-01T18:30:00Z'}, headers=other)
+        result = self.stats('?start=2025-01-02&end=2025-01-02')['analysis']
+        self.assertEqual(sum(hour['quantity'] for hour in result['hourly']), 5)
+        self.assertEqual(result['hourly'][0]['quantity'], 5)
+        self.assertEqual(result['weekdays'][3]['average'], 5)
+        self.assertEqual(result['projection']['quantity'], 150)
+        self.assertEqual(result['trend'][0]['quantity'], 5)
+
     def test_auth_required_for_all_private_routes(self):
         for path in ['/api/me', '/api/stats', '/api/cigarettes', '/api/settings', '/api/tokens', '/api/export.csv']:
             self.assertEqual(self.client.get(path).status_code, 401)

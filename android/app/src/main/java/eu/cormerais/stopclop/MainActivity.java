@@ -27,6 +27,7 @@ public final class MainActivity extends Activity {
     private LinearLayout content;
     private TextView status;
     private String server = "", token = "", zone = "Europe/Paris", page = "dashboard";
+    private boolean trendSmoothed = false;
     private int days = 30, historyOffset = 0;
     private boolean busy = false;
     private String pendingKey = null, pendingPayload = null;
@@ -254,19 +255,45 @@ public final class MainActivity extends Activity {
             LinearLayout old=content;content=chartCard;Spinner picker=select("chart_currency",codes,codes.indexOf(chartCurrency));content=old;
             picker.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener(){public void onNothingSelected(AdapterView<?> p){}public void onItemSelected(AdapterView<?> p,View v,int position,long id){String selected=codes.get(position);if(!selected.equals(chartCurrency)){chartCurrency=selected;try{renderAnalysis();}catch(Exception e){setStatus(e.getMessage());}}}});
         }
-        chart(chartCard,analysis.getJSONArray("daily"),chartCost,chartCurrency,chartCost?analysis.getJSONObject("average_cost_per_day").getDouble(chartCurrency):analysis.getDouble("average_quantity_per_day"),true);
+        if(analysis.has("trend")){Switch smooth=new Switch(this);smooth.setText(t("trend_smooth"));smooth.setChecked(trendSmoothed);chartCard.addView(smooth);smooth.setOnCheckedChangeListener((button,checked)->{trendSmoothed=checked;try{renderAnalysis();}catch(Exception e){setStatus(e.getMessage());}});if(trendSmoothed)cardText(chartCard,t("trend_note"),12,Ui.MUTED,false);}
+        chart(chartCard,analysis.getJSONArray(trendSmoothed&&analysis.has("trend")?"trend":"daily"),chartCost,chartCurrency,chartCost?analysis.getJSONObject("average_cost_per_day").getDouble(chartCurrency):analysis.getDouble("average_quantity_per_day"),true);
         cardText(chartCard,t("average_legend"),12,Ui.MUTED,false);
         chartCard.addView(Ui.button(this,t("daily_figures"),false,()->dailyFigures(analysis)));
         LinearLayout spending=card(Ui.PEACH);cardText(spending,t("average_daily_cost"),13,Ui.ORANGE,false);
         for(String code:codes){cardText(spending,money(analysis.getJSONObject("average_cost_per_day").getDouble(code),code),27,Ui.INK,true);
             JSONObject percentages=comparison.getJSONObject("cost_percent");String delta=percentages.isNull(code)?t("percent_unavailable"):signed(percentages.getDouble(code))+" %";
             cardText(spending,delta+" · "+t("previous_comparison"),12,Ui.MUTED,false);}
+        renderHabits(analysis);
         LinearLayout totals=card(Ui.WHITE);cardText(totals,t("period_total"),12,Ui.MUTED,false);cardText(totals,t("quantity_count",number(period.getInt("quantity")))+" · "+costs(period),21,Ui.INK,true);
         cardText(totals,t("all_time"),12,Ui.MUTED,false);cardText(totals,t("quantity_count",number(stats.getJSONObject("total").getInt("quantity")))+" · "+costs(stats.getJSONObject("total")),19,Ui.INK,true);
         JSONObject previous=analysis.getJSONObject("previous_period");
         text(t("previous_dates",dateLabel(previous.getString("start")),dateLabel(previous.getString("end"))),12);
         text(t("analysis_range",number(analysis.getInt("minimum_quantity")),number(analysis.getInt("maximum_quantity")),number(analysis.getInt("days_with_entries"))),12);
         text(t("analysis_basis"),12);if(analysis.optBoolean("includes_today"))text(t("day_in_progress"),12);text(t("empty_day_note"),12);
+    }
+    private void renderHabits(JSONObject analysis) throws Exception {
+        // Older servers can still serve the existing dashboard during a rolling upgrade.
+        if(!analysis.has("hourly"))return;
+        LinearLayout habits=card(Ui.WHITE);cardText(habits,t("habits_title"),20,Ui.INK,true);
+        cardText(habits,t("habits_note",zone),12,Ui.MUTED,false);
+        cardText(habits,t("hourly_title"),17,Ui.INK,true);
+        JSONArray hours=analysis.getJSONArray("hourly");double[] values=new double[24];String[] labels=new String[24];StringBuilder figures=new StringBuilder();
+        int peak=0;for(int i=0;i<24;i++){JSONObject hour=hours.getJSONObject(i);values[i]=hour.getDouble("quantity");labels[i]=String.format(Locale.ROOT,"%02d",i)+":00";if(values[i]>values[peak])peak=i;
+            figures.append(t("hourly_value",String.format(Locale.ROOT,"%02d",i),number(values[i]),number(hour.getDouble("share_percent")))).append("\n\n");}
+        if(values[peak]==0)cardText(habits,t("habits_empty"),13,Ui.MUTED,false);
+        TextView selected=Ui.label(this,"",14,Ui.INK,true);selected.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        TrendChart hourly=new TrendChart(this,values,labels,0,false,locale(),index->{try{selected.setText(t("hourly_value",String.format(Locale.ROOT,"%02d",index),number(values[index]),number(hours.getJSONObject(index).getDouble("share_percent"))));}catch(Exception e){setStatus(e.getMessage());}});
+        hourly.setContentDescription(t("hourly_title")+". "+t("hourly_figures"));habits.addView(hourly,new LinearLayout.LayoutParams(-1,dp(180)));habits.addView(selected);hourly.select(peak);
+        habits.addView(Ui.button(this,t("hourly_figures"),false,()->new AlertDialog.Builder(this).setTitle(t("hourly_title")).setMessage(figures.toString()).setPositiveButton(t("back"),null).show()));
+        cardText(habits,t("weekday_title"),17,Ui.INK,true);cardText(habits,t("weekday_note"),12,Ui.MUTED,false);
+        JSONArray weekdays=analysis.getJSONArray("weekdays");double max=1;for(int i=0;i<weekdays.length();i++)max=Math.max(max,weekdays.getJSONObject(i).optDouble("average",0));
+        for(int i=0;i<weekdays.length();i++){JSONObject day=weekdays.getJSONObject(i);String name=DayOfWeek.of(day.getInt("weekday")+1).getDisplayName(java.time.format.TextStyle.FULL,locale());
+            String label=day.isNull("average")?name+" · "+t("no_sample"):t("weekday_value",name,number(day.getDouble("average")),number(day.getInt("days")));
+            cardText(habits,label,13,Ui.INK,false);ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(1000);bar.setProgress((int)(day.optDouble("average",0)/max*1000));bar.setProgressTintList(android.content.res.ColorStateList.valueOf(Ui.GREEN));bar.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);habits.addView(bar,new LinearLayout.LayoutParams(-1,dp(8)));}
+        JSONObject projection=analysis.getJSONObject("projection");LinearLayout estimate=card(Ui.PEACH);cardText(estimate,t("projection_title"),19,Ui.INK,true);
+        if(projection.isNull("quantity")){cardText(estimate,t("projection_empty"),13,Ui.MUTED,false);return;}
+        cardText(estimate,t("quantity_count",number(projection.getDouble("quantity"))),27,Ui.INK,true);cardText(estimate,costs(projection),22,Ui.ORANGE,true);
+        cardText(estimate,t("projection_note",number(projection.getInt("sample_days"))),12,Ui.MUTED,false);
     }
     private void chart(LinearLayout parent,JSONArray daily,boolean cost,String currency,double average,boolean details) throws Exception {
         double[] values=new double[daily.length()];String[] labels=new String[daily.length()];

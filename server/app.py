@@ -16,7 +16,7 @@ from .timezones import (VALID_TIMEZONES, ALIASES, TZDATA_VERSION, get_zone,
                         canonical_timezone, timezone_catalog, timezone_info)
 
 from .sync import SCHEMA as SYNC_SCHEMA, events
-from .analysis import analyze
+from .analysis import analyze, habits
 from .push import SCHEMA as PUSH_SCHEMA, queue_refresh, topic_for
 
 from flask import Flask, Response, g, jsonify, request, send_from_directory
@@ -475,7 +475,8 @@ def create_app(config=None):
         tz, today, start, end = period()
         days = (end - start).days + 1
         daily = {(start + timedelta(days=i)).isoformat(): {'quantity': 0, 'amounts': {}} for i in range(days)}
-        for row in entries(start, end, tz):
+        period_rows = entries(start, end, tz)
+        for row in period_rows:
             day = datetime.fromisoformat(row['occurred_at']).astimezone(tz).date().isoformat()
             daily[day]['quantity'] += row['quantity']
             amounts = daily[day]['amounts']
@@ -503,6 +504,7 @@ def create_app(config=None):
         analysis = analyze([dict(date=d, **v) for d, v in daily.items()], previous, g.user['currency'],
                            previous_start.isoformat() if previous else None,
                            previous_end.isoformat() if previous else None, end == today)
+        analysis.update(habits([dict(date=d, **v) for d, v in daily.items()], period_rows, tz, end == today, g.user['currency']))
         return jsonify(analysis=analysis, start=start.isoformat(), end=end.isoformat(), timezone=g.user['timezone'],
                        today=total('AND occurred_at>=? AND occurred_at<?', (low, high)), total=total(),
                        period=dict(quantity=quantity, **cost_summary(period_amounts, g.user['currency']),

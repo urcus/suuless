@@ -14,6 +14,15 @@ try{
   assert.match(await page.locator('#analysis-average-cost').textContent(),/1\.80/);
   assert.match(await page.locator('#analysis-comparison').textContent(),/-2.*-25%/);
   assert.match(await page.locator('#daily-table').textContent(),/-1.*-33\.33%/);
+  assert.equal(await page.locator('#hourly-chart .bar-column').count(),24);
+  assert.match(await page.locator('#hourly-figures').textContent(),/12:00.*6 cigarettes.*100%/);
+  assert.equal(await page.locator('#weekday-chart meter').count(),7);
+  assert.match(await page.locator('#projection-quantity').textContent(),/90/);
+  assert.match(await page.locator('#projection-cost').textContent(),/54/);
+  await page.locator('#chart-smooth').check();
+  assert.equal(await page.locator('#trend-note').isVisible(),true);
+  assert.match(await page.locator('#chart .bar-column').last().getAttribute('title'),/3 cigarettes/);
+  await page.locator('#chart-smooth').uncheck();
   await page.locator('#chart-measure').selectOption('cost');
   assert.equal(await page.locator('#chart-currency').inputValue(),'EUR');
   assert.equal(await page.locator('.mean-tick').count(),2);
@@ -26,6 +35,6 @@ try{
   await page.screenshot({path:'test-results/analysis-mobile.png',fullPage:true});
   await page.locator('#start-date').fill('2024-01-01');await page.locator('#end-date').fill('2024-01-02');await page.locator('#range-form button').click();
   await page.waitForFunction(()=>document.querySelector('#analysis-average-quantity').textContent==='0');
-  assert.ok(!(await page.locator('.analysis').textContent()).match(/NaN|Infinity/));assert.deepEqual(errors,[]);
+  assert.ok(!(await page.locator('.analysis').allTextContents()).join(' ').match(/NaN|Infinity/));assert.deepEqual(errors,[]);
   console.log('Web analysis OK: daily deltas, previous period, historical costs, mixed currencies, zero baseline and mobile layout.');
 }finally{await browser.close();}

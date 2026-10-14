@@ -192,5 +192,20 @@
   "time_preferences": "Votre fuseau horaire",
   "sync_preferences": "Widget et synchronisation",
   "account_preferences": "Votre compte",
-  "choose_datetime": "Choisir la date et l’heure"
+  "choose_datetime": "Choisir la date et l’heure",
+  "habits_title": "À quels moments fumez-vous ?",
+  "habits_note": "Quantités enregistrées dans le fuseau {0}. Les saisies groupées comptent à leur heure de saisie. La journée en cours est incomplète ; les heures répétées au changement d’heure sont regroupées.",
+  "hourly_title": "Par heure",
+  "hourly_value": "{0}:00–{0}:59 · {1} cigarettes · {2} % de la période",
+  "weekday_title": "Par jour de la semaine",
+  "weekday_note": "Moyenne par occurrence de chaque jour de la semaine, y compris les jours sans saisie.",
+  "weekday_value": "{0} · {1} / jour · {2} jours",
+  "projection_title": "À ce rythme, sur 30 jours",
+  "projection_note": "Estimation sur {0} journées terminées de la période sélectionnée, y compris celles sans saisie. Aujourd’hui est exclu. Ce n’est ni une prévision ni une conversion de devises.",
+  "projection_empty": "Sélectionnez une période comprenant au moins une journée terminée pour voir une estimation.",
+  "habits_empty": "Aucune cigarette enregistrée sur cette période.",
+  "hourly_figures": "Voir toutes les valeurs horaires",
+  "no_sample": "Aucun jour dans cette période",
+  "trend_smooth": "Lisser sur 7 jours",
+  "trend_note": "Moyenne des 7 derniers jours, limitée à la période sélectionnée. Les premiers points utilisent moins de jours ; aujourd’hui reste provisoire."
 }
