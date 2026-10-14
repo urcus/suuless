@@ -98,6 +98,7 @@ jobs:
     timeout-minutes: 30
     env:
       ANDROID_HOME: ${{ github.workspace }}/.android-sdk
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
       ANDROID_USER_HOME: ${{ github.workspace }}/.android-user
       CI_PIPELINE_IID: ${{ github.run_number }}
       CI_COMMIT_TAG: ${{ needs.metadata.outputs.tag }}
