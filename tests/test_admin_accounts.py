@@ -173,13 +173,13 @@ class AdminAccountsTest(unittest.TestCase):
             db.executescript(SCHEMA)
             for uid, name in [(5,'alice'),(9,'admin')]:
                 db.execute('INSERT INTO users(id,username,password_hash) VALUES(?,?,?)', (uid,name,generate_password_hash('previous-test-password')))
-        config = dict(self.config,DATABASE=path)
+        config = dict(self.config,DATABASE=path,ADMIN_USERNAME='operator')
         migrated = create_app(config)
         client = migrated.test_client()
-        result = client.post('/api/auth/login',json={'username':'admin','password':'previous-test-password'})
+        result = client.post('/api/auth/login',json={'username':'operator','password':'admin-test-password'})
         self.assertEqual(result.status_code,200)
         me = client.get('/api/me',headers={'Authorization':'Bearer '+result.json['token']}).json
-        self.assertEqual((me['id'],me['role']),(9,'admin'))
+        self.assertEqual((me['id'],me['role']),(10,'admin'))
         create_app(dict(config,ADMIN_USERNAME='alice'))
         with closing(sqlite3.connect(path)) as db:
             self.assertEqual(db.execute("SELECT role,active FROM users WHERE username='alice'").fetchone(),('user',1))

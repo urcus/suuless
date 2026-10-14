@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="{{ language }}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>SuuLess — {{ t('consumption_report') }}</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;color:#163d32;max-width:960px;margin:2rem auto;padding:0 1rem}h1,h2{line-height:1.2}table{border-collapse:collapse;width:100%;margin:1rem 0}th,td{padding:.5rem;text-align:left;border-bottom:1px solid #ccc;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}small{color:#555}@media print{body{font-size:11pt;margin:0;max-width:none}h2{break-after:avoid}@page{margin:15mm}}</style></head><body>
+<h1>SuuLess — {{ t('consumption_report') }}</h1>
+<p>{{ t('report_period') }}: <strong>{{ start }} — {{ end }}</strong><br>{{ t('timezone') }}: {{ timezone }}<br>{{ t('report_generated') }}: {{ generated }}</p>
+<p>{{ t('report_description') }}</p>
+<h2>{{ t('report_summary') }}</h2>
+<table><tbody>
+<tr><th>{{ t('report_recorded') }}</th><td>{{ quantity }}</td></tr>
+<tr><th>{{ t('average_daily_quantity') }}</th><td>{{ average }}</td></tr>
+<tr><th>{{ t('report_days') }}</th><td>{{ days }}</td></tr>
+<tr><th>{{ t('report_missing') }}</th><td>{{ missing }}</td></tr>
+<tr><th>{{ t('cost') }}</th><td>{{ total_cost }}</td></tr>
+</tbody></table>
+<p>{{ t('report_limits') }}</p>{% if includes_today %}<p>{{ t('day_in_progress') }}</p>{% endif %}
+<h2>{{ t('daily_figures') }}</h2>
+<table><thead><tr><th>{{ t('day') }}</th><th>{{ t('report_recorded') }}</th><th>{{ t('cost') }}</th></tr></thead><tbody>
+{% for day in daily %}<tr><td>{{ day.date }}</td><td>{{ day.quantity if day.quantity else t('report_no_entries') }}</td><td>{{ day.cost }}</td></tr>{% endfor %}
+</tbody></table>
+<p><small>{{ t('report_print_help') }}</small></p>
+</body></html>

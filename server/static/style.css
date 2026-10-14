@@ -28,3 +28,7 @@ body{line-height:1.5}header{max-width:1160px;padding:20px 24px;border:0}.brand{f
 .connected-devices{border-top:1px solid var(--line);margin-top:24px;padding-top:20px}.connected-devices summary{font-size:17px;line-height:1.5}.connected-devices[open] summary{margin-bottom:16px}.session-count{display:inline-block;border-radius:20px;background:#edf3e5;padding:1px 9px;font-size:13px;margin-left:6px}.connected-devices>button{margin-top:16px}.connected-devices .history{max-height:340px}
 
 .account-deletion{border-top:1px solid #e5c9c4;padding-top:20px;margin-top:28px}.account-deletion summary{color:#98392a;font-size:16px}.account-deletion[open] summary{margin-bottom:18px}.account-deletion .smooth-toggle{align-items:flex-start}.account-deletion input[type=checkbox]{flex:none}.account-deletion button.danger{font-size:14px;padding:12px 18px;background:#98392a;color:white}
+
+#export-dialog{max-width:34rem;width:calc(100% - 2rem);border:1px solid #ccc;border-radius:1rem;padding:1.5rem}#export-dialog::backdrop{background:#0008}.export-actions{display:grid;grid-template-columns:1fr;gap:.75rem;margin:1rem 0}
+
+#export-dialog [hidden]{display:none}

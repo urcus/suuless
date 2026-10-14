@@ -24,7 +24,7 @@ from .coaching import (SCHEMA as COACHING_SCHEMA, TRIGGERS, invalidate_checkins,
                        reminder_preferences, register_routes, plan_for, goal_for)
 from .push import SCHEMA as PUSH_SCHEMA, queue_refresh, topic_for
 
-from flask import Flask, Response, g, jsonify, request, send_from_directory
+from flask import Flask, Response, g, jsonify, request, send_from_directory, render_template
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -90,11 +90,11 @@ def body():
 
 def initialize_account(conn, config):
     """Run inside the startup transaction, once per installation, across workers."""
-    if conn.execute('SELECT 1 FROM installation_state WHERE id=1').fetchone():
+    state = conn.execute('SELECT admin_initialized FROM installation_state WHERE id=1').fetchone()
+    if state and state[0]:
         return
-    # Existing installations (including deleted accounts) must not be reprovisioned.
-    if conn.execute('SELECT last_id FROM account_sequence WHERE id=1').fetchone()[0] > 0:
-        conn.execute('INSERT INTO installation_state VALUES(1,1)')
+    if conn.execute("SELECT 1 FROM users WHERE role='admin'").fetchone():
+        conn.execute('INSERT INTO installation_state(id,initial_account_handled,admin_initialized) VALUES(1,1,1) ON CONFLICT(id) DO UPDATE SET admin_initialized=1')
         return
     username, password = config['ADMIN_USERNAME'], config['ADMIN_PASSWORD']
     if username == '' and password == '':
@@ -103,10 +103,12 @@ def initialize_account(conn, config):
         raise ValueError('ADMIN_USERNAME must contain 3–40 letters, digits, underscores, dots or hyphens')
     if not isinstance(password, str) or not 12 <= len(password) <= 256:
         raise ValueError('ADMIN_PASSWORD must contain 12–256 characters')
+    if conn.execute('SELECT 1 FROM users WHERE username=?', (username.lower(),)).fetchone():
+        raise ValueError('ADMIN_USERNAME belongs to an existing user; choose a dedicated administrator username')
     user_id = conn.execute('UPDATE account_sequence SET last_id=last_id+1 WHERE id=1 RETURNING last_id').fetchone()[0]
     conn.execute("INSERT INTO users(id,username,password_hash,role) VALUES(?,?,?,'admin')",
                  (user_id, username.lower(), generate_password_hash(password)))
-    conn.execute('INSERT INTO installation_state VALUES(1,1)')
+    conn.execute('INSERT INTO installation_state(id,initial_account_handled,admin_initialized) VALUES(1,1,1) ON CONFLICT(id) DO UPDATE SET admin_initialized=1')
 
 
 def create_app(config=None):
@@ -128,13 +130,10 @@ def create_app(config=None):
         conn.execute('BEGIN IMMEDIATE')
         try:
             columns = {row[1] for row in conn.execute('PRAGMA table_info(users)')}
-            adding_roles = 'role' not in columns
             for column, definition in [('role', "TEXT NOT NULL DEFAULT 'user'"), ('active', 'INTEGER NOT NULL DEFAULT 1'), ('suspended', 'INTEGER NOT NULL DEFAULT 0'), ('email', 'TEXT'), ('email_verified', 'INTEGER NOT NULL DEFAULT 0')]:
                 if column not in columns:
                     conn.execute(f'ALTER TABLE users ADD COLUMN {column} {definition}')
             conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email)')
-            if adding_roles and app.config['ADMIN_USERNAME']:
-                conn.execute("UPDATE users SET role='admin' WHERE username=?", (app.config['ADMIN_USERNAME'].lower(),))
             for column, definition in [('language', "TEXT NOT NULL DEFAULT 'en'"),
                                        ('currency', "TEXT NOT NULL DEFAULT 'EUR'"),
                                        ('pack_price_micros', 'INTEGER NOT NULL DEFAULT 12000000')]:
@@ -156,6 +155,9 @@ def create_app(config=None):
             conn.execute("UPDATE tokens SET kind='api' WHERE kind='legacy' AND name<>'Session'")
             # Never reuse an account ID after deletion (including requests still in flight).
             conn.execute("INSERT INTO account_sequence SELECT 1,COALESCE(MAX(id),0) FROM users WHERE true ON CONFLICT(id) DO UPDATE SET last_id=MAX(last_id,excluded.last_id)")
+            state_columns = {row[1] for row in conn.execute('PRAGMA table_info(installation_state)')}
+            if 'admin_initialized' not in state_columns:
+                conn.execute('ALTER TABLE installation_state ADD COLUMN admin_initialized INTEGER NOT NULL DEFAULT 0')
             initialize_account(conn, app.config)
             conn.commit()
         except Exception:
@@ -648,6 +650,32 @@ def create_app(config=None):
                                    average_per_day=round(quantity / days, 2), days=days,
                                    days_without_entries=sum(day['quantity'] == 0 for day in daily.values())),
                        daily=[dict(date=d, quantity=v['quantity'], **cost_summary(v['amounts'], g.user['currency'])) for d, v in daily.items()])
+
+    @app.get('/api/report.html')
+    def consumption_report():
+        tz, today, start, end = period()
+        count = (end - start).days + 1
+        daily = {(start + timedelta(days=i)).isoformat(): {'quantity': 0, 'amounts': {}} for i in range(count)}
+        amounts = {}
+        for row in entries(start, end, tz):
+            day = daily[datetime.fromisoformat(row['occurred_at']).astimezone(tz).date().isoformat()]
+            day['quantity'] += row['quantity']
+            code = row['currency']
+            value = row['quantity'] * row['unit_cost_micros']
+            day['amounts'][code] = day['amounts'].get(code, 0) + value
+            amounts[code] = amounts.get(code, 0) + value
+        def cost(values):
+            return ' + '.join(f'{price_string(value, code)} {code}' for code, value in sorted(values.items())) or '—'
+        quantity = sum(day['quantity'] for day in daily.values())
+        html = render_template('consumption-report.html', t=translate, language=language(),
+                               start=start.isoformat(), end=end.isoformat(), timezone=g.user['timezone'],
+                               generated=now().astimezone(tz).isoformat(timespec='seconds'),
+                               quantity=quantity, average=round(quantity / count, 2), days=count,
+                               missing=sum(day['quantity'] == 0 for day in daily.values()),
+                               total_cost=cost(amounts), includes_today=end == today,
+                               daily=[dict(date=date, quantity=day['quantity'], cost=cost(day['amounts'])) for date, day in daily.items()])
+        return app.response_class(html, mimetype='text/html', headers={
+            'Content-Disposition': f'attachment; filename=suuless-report-{start}-{end}.html'})
 
     @app.get('/api/export.csv')
     def export():

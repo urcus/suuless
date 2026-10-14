@@ -17,7 +17,7 @@ The port is accessible only from the host by default. For LAN testing with the A
 
 For remote use, provide an HTTPS reverse proxy. Release APKs reject HTTP. No proxy or certificate is bundled. The service listens on port 8080 and exposes `/healthz`.
 
-To start a fresh installation with public registration disabled, configure the initial account in `.env`:
+To create the first administrator, including on an existing installation with public registration disabled, configure `.env`:
 
 ```dotenv
 ALLOW_REGISTRATION=false
@@ -27,7 +27,7 @@ ADMIN_PASSWORD='replace-with-a-long-unique-password'
 
 Both `ADMIN_` variables are optional together. When configured, the username must contain 3–40 letters, digits, underscores, dots or hyphens; the password must contain 12–256 characters. The password is passed directly as an environment variable and stored only as a scrypt hash in SQLite. Invalid initial credentials prevent startup without printing their values.
 
-Creation is transactional and happens once, including with multiple server workers. Existing installations are left untouched; changing these variables does not reset a password or add another user. Deleting the initial account does not recreate it on restart. You can remove the variables after initialization. The initial account has the `admin` role and uses a separate administration interface. See [administration, invitations and SMTP](administration.md).
+Creation is transactional and happens once, including with multiple server workers. An existing installation without an initialized administrator receives a dedicated admin account; existing users remain unchanged. Once administrator initialization has completed, changing these variables does not reset a password or create another account. A username already held by an ordinary user is rejected. Deleting the initial account does not recreate it on restart. You can remove the variables after initialization. The initial account has the `admin` role and uses a separate administration interface. See [administration, invitations and SMTP](administration.md).
 
 After creating the required accounts, set `ALLOW_REGISTRATION=false` in `.env` and run `docker compose up -d` to close registration. Existing accounts continue to work.
 

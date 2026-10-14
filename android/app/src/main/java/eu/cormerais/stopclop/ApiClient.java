@@ -35,7 +35,7 @@ final class ApiClient {
                 String message="HTTP "+code;try{message=new JSONObject(raw).optString("error",message);}catch(Exception ignored){}
                 throw new HttpError(code,message);
             }
-            if(path.endsWith(".csv"))return raw;
+            if(path.split("\\?",2)[0].matches(".*\\.(csv|html)"))return raw;
             return raw.startsWith("[")?new JSONArray(raw):new JSONObject(raw);
         }finally{connection.disconnect();}
     }

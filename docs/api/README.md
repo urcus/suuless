@@ -85,3 +85,7 @@ Administrators use session bearer tokens with `/api/admin/users`, `/api/admin/in
 Public recovery routes are `POST /api/auth/forgot-password`, `POST /api/auth/resend-activation` and `POST /api/auth/complete`. A signed-in user can add a recovery email with `POST /api/account/email` and their current password. See the [OpenAPI contract](openapi.yaml) and [administration guide](../deployment/administration.md) for payloads, expiration, session revocation and SMTP behavior.
 
 SMTP responses include `managed_by_environment`. When true, environment variables own the effective settings: `PUT /api/admin/smtp` returns HTTP 409 and test delivery still uses the effective configuration. The SMTP password is never returned.
+
+## Consumption exports
+
+Authenticated users can request `GET /api/export.csv` or `GET /api/report.html` with optional inclusive `start` and `end` dates. Both use the account time zone and accept 1–366 days, ending no later than today. The default is the last 30 days. The HTML report uses the account language, contains no name or account identifier, and can be printed to PDF by a browser. Both responses are private, user-scoped attachments with `Cache-Control: no-store`; send the bearer token in the Authorization header, never in a shared URL. See the [OpenAPI contract](openapi.yaml) and [user guide](../user-guide/usage.md#download-and-share-consumption-records).

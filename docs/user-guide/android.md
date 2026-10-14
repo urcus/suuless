@@ -56,3 +56,7 @@ The shared implementation is [`scripts/ci/android-version-code.sh`](../../script
 The billion prefix separates releases from earlier small CI counters. Before first distribution, check that installed APK codes are lower than the new release. Use increasing version tags. Retries and platform changes preserve the code for the same tag; compatible updates still require the same signing key. The APK files need not be byte-identical.
 
 Branches, prerelease tags and local script builds use code `1` for testing. `versionName` is the tag without `v`, or a development name containing a CI counter. `ANDROID_VERSION_CODE_OFFSET` is no longer used. Old tags retain their historical build scripts.
+
+## Consumption exports
+
+Use **Analysis** or **History → Export / share**, select the last **7, 30 or 90 days**, then save or share a CSV or printable HTML report. See [consumption exports](usage.md#download-and-share-consumption-records) for the contents, printing to PDF and sharing behavior. A server version providing `/api/report.html` is required for reports.

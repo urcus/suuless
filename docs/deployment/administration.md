@@ -10,7 +10,7 @@ The API enforces this separation: administrative operations require an administr
 
 ## First administrator and existing installations
 
-For a new installation, configure before first startup:
+To create the first administrator on either a new installation or an existing database without an administrator, configure:
 
 ```dotenv
 ALLOW_REGISTRATION=false
@@ -18,11 +18,13 @@ ADMIN_USERNAME=administrator
 ADMIN_PASSWORD='replace-with-a-long-unique-password'
 ```
 
-The account is created with role `admin`. Initialization remains transactional and one-time; later changes to these variables do not reset passwords or recreate accounts. No predefined password is shipped.
+The account is created with role `admin`, even when ordinary users already exist or public registration is disabled. Creation is transactional across startup workers. A dedicated persistent marker records administrator initialization separately from historical account initialization.
 
-When upgrading a database that has no role column yet, the existing account matching `ADMIN_USERNAME` becomes the administrator if that variable is present. Other accounts remain ordinary users. Consumption data is preserved, though a promoted administrator no longer has access to consumption pages. Use a dedicated account if you also track your own consumption.
+Use a username that is not already held by an ordinary user. A collision stops startup with an explicit error; no account is automatically promoted and no password or consumption data is changed. If an administrator already exists or administrator initialization was previously completed, these variables do not create another account or reset credentials. Deleting an initialized administrator through operator tooling does not cause automatic recreation. No predefined password is shipped.
 
-On an existing installation without an administrator, create a dedicated one interactively:
+After changing Kubernetes variables, restart/recreate the pod using an image containing this behavior. Earlier versions only initialized an administrator on an empty installation. On those versions, use the interactive command below without deleting the database or PVC.
+
+Alternatively, create a dedicated administrator interactively (also available in earlier versions with admin support):
 
 ```sh
 docker compose exec stop-clop flask --app server.app:create_app create-admin

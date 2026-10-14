@@ -641,6 +641,46 @@ paths:
           1–366 days, from 2000 through today.'
       description: 'UTF-8 with BOM. Columns: id,local_datetime,quantity,cost,currency,source. Attachment
         filename: suuless.csv.'
+  /api/report.html:
+    get:
+      operationId: get_api_report_html
+      tags:
+      - Entries
+      summary: Download a printable consumption report
+      responses:
+        '200':
+          description: Successful response
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+      parameters:
+      - name: start
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        description: 'Inclusive account-local date. Default: end=today, start=end minus 29 days. Range:
+          1–366 days, from 2000 through today.'
+      - name: end
+        in: query
+        required: false
+        schema:
+          type: string
+          format: date
+        description: 'Inclusive account-local date. Default: end=today, start=end minus 29 days. Range:
+          1–366 days, from 2000 through today.'
+      description: >-
+        Self-contained, localized HTML attachment, printable to PDF in a browser.
+        Includes daily recorded quantities, period totals, daily average and historical
+        costs kept separate by currency. Empty days are labeled as missing entries,
+        not confirmed abstinence. No account identifier or name is included.
+        Language and time zone follow account preferences. Cache-Control is no-store.
   /api/sync/config:
     get:
       operationId: get_api_sync_config

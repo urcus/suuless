@@ -101,7 +101,7 @@ The manifests retain historical `stop-clop` resource names and PVC references to
 
 ## Initial account with closed registration
 
-On a fresh database, set `ALLOW_REGISTRATION` to `"false"` and inject `ADMIN_USERNAME` and `ADMIN_PASSWORD` as environment variables. For example, provision a Secret named `suuless-initial-account` with those two keys through your usual secret-management process, then add to the container:
+On a fresh database or an existing installation without an initialized administrator, set `ALLOW_REGISTRATION` to `"false"` and inject `ADMIN_USERNAME` and `ADMIN_PASSWORD` as environment variables. For example, provision a Secret named `suuless-initial-account` with those two keys through your usual secret-management process, then add to the container:
 
 ```yaml
 envFrom:

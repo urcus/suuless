@@ -45,8 +45,9 @@ try {
   await page.locator('#refresh').click();
   await waitForText('#today-count','3');
   await waitForText('#period-cost','2,10');
-  const downloadEvent=page.waitForEvent('download');await page.locator('[data-view=history]').click();await page.locator('#export').click();
-  assert.equal((await downloadEvent).suggestedFilename(),'suuless.csv');
+  const downloadEvent=page.waitForEvent('download');await page.locator('[data-view=history]').click();await page.locator('#export').click();await page.locator('#export-7').click();await page.locator('#download-csv').click();
+  assert.match((await downloadEvent).suggestedFilename(),/^suuless-consumption-.*\.csv$/);
+  await page.locator('#close-export').click();
   await page.locator('[data-view=settings]').click();
   await page.locator('[data-view=analysis]').click();
   const bars=await page.locator('.bar').evaluateAll(items=>items.some(item=>parseFloat(getComputedStyle(item).height)>10));

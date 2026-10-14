@@ -29,7 +29,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Open <http://localhost:8080>, create an account and set your language, pack price and time zone. No predefined credentials are shipped. For a fresh installation with `ALLOW_REGISTRATION=false`, set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `.env` before starting; see [initial account configuration](docs/deployment/docker.md#start-with-docker).
+Open <http://localhost:8080>, create an account and set your language, pack price and time zone. No predefined credentials are shipped. To create the first administrator, including on an existing installation with `ALLOW_REGISTRATION=false`, set `ADMIN_USERNAME` and `ADMIN_PASSWORD` in `.env` before starting; see [initial account configuration](docs/deployment/docker.md#start-with-docker).
 
 The port is bound to localhost by default. Use an HTTPS reverse proxy for remote access. Data persists in the Docker volume; **`docker compose down -v` deletes it**.
 

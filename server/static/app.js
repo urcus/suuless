@@ -33,7 +33,7 @@ async function setLanguage(code, updatePreference=true) {
   $('header-language').value=code; if(updatePreference)$('language').value=code; authLabels();renderNavigation();
 }
 function disconnected() {
-  resetCoaching();showView("today");history.replaceState(null,"",location.pathname+location.search);
+  $('export-dialog').close();exportFiles=null;resetCoaching();showView("today");history.replaceState(null,"",location.pathname+location.search);
   preferenceBaseline=null;pendingEntry=null; token=''; sessionStorage.removeItem('stop-clop-token'); settings=null;
   $('auth').hidden=false; $('dashboard').hidden=true; $('identity').hidden=true;
   $('token-value').value=''; $('new-token').hidden=true;
@@ -52,7 +52,7 @@ async function api(path,method='GET',data,extra={}) {
     const error=new Error(payload.error||t('http_error',response.status)); error.status=response.status; throw error;
   }
   if(response.status===204)return null;
-  return path.split('?')[0].endsWith('.csv')?response.blob():response.json();
+  return path.split('?')[0].match(/\.(csv|html)$/)?response.blob():response.json();
 }
 function action(id,event,callback) {
   $(id).addEventListener(event,async e=>{
@@ -309,7 +309,47 @@ action('settings-form','submit',async()=>{
   notice(t('settings_saved'));await Promise.all([refresh(),loadTokens()]);
 });
 action('token-form','submit',async()=>{const result=await api('/tokens','POST',{name:$('token-name').value});$('token-value').value=result.token;$('new-token').hidden=false;await loadTokens();});
-action('export','click',async()=>{const blob=await api(`/export.csv?${query()}`),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='suuless.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+let exportFiles = null, exportRequest = 0;
+function downloadExport(file) {
+  const url=URL.createObjectURL(file),a=document.createElement('a');a.href=url;a.download=file.name;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function openExport() {
+  exportRequest++;exportFiles=null;
+  $('export-status').textContent='';$('export-range').textContent='';
+  $('export-periods').hidden=false;$('export-formats').hidden=true;
+  $('export-dialog').showModal();
+}
+action('export','click',openExport);
+action('analysis-export','click',openExport);
+for(const days of [7,30,90]) {
+  action(`export-${days}`,'click',async()=>{
+    const request=++exportRequest,session=token;
+    $('export-status').textContent=t('export_preparing');
+    try {
+      const prefs=await api('/settings'),end=prefs.local_today,startDate=new Date(end+'T12:00:00Z');
+      startDate.setUTCDate(startDate.getUTCDate()-days+1);
+      const start=startDate.toISOString().slice(0,10),period=`start=${start}&end=${end}`;
+      const blobs=await Promise.all([api(`/export.csv?${period}`),api(`/report.html?${period}`)]);
+      if(token!==session||request!==exportRequest||!$('export-dialog').open)return;
+      exportFiles=blobs.map((blob,i)=>new File([blob],`suuless-${i?'report':'consumption'}-${start}-${end}.${i?'html':'csv'}`,{type:i?'text/html':'text/csv'}));
+      $('export-range').textContent=`${dayLabel(start)} — ${dayLabel(end)} (${prefs.timezone})`;
+      $('export-periods').hidden=true;$('export-formats').hidden=false;$('export-status').textContent='';
+      $('download-csv').focus();
+    } catch(error) { if(request===exportRequest)$('export-status').textContent=error.message; }
+  });
+}
+for(const [id,index,share] of [['download-csv',0,false],['download-report',1,false],['share-csv',0,true],['share-report',1,true]]) {
+  action(id,'click',async()=>{
+    const file=exportFiles?.[index];if(!file)return;
+    if(!share){downloadExport(file);return;}
+    if(!navigator.canShare?.({files:[file]})){$('export-status').textContent=t('share_unavailable');return;}
+    try{await navigator.share({files:[file],title:t('consumption_report')});}
+    catch(error){if(error.name!=='AbortError')$('export-status').textContent=t('share_unavailable');}
+  });
+}
+action('close-export','click',()=>$('export-dialog').close());
+$('export-dialog').addEventListener('close',()=>{exportFiles=null;exportRequest++;});
 initializeNavigation();
 initializeCoaching();
 (async()=>{await setLanguage(locale);await loadCatalog();if(token)await connected();})().catch(err=>notice(err.message,true));

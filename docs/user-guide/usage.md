@@ -57,3 +57,14 @@ See [coaching](coaching.md) for goals, craving pauses, daily confirmations and r
 <img src="../assets/screenshots/web-mobile.png" alt="English mobile web dashboard with demonstration data" width="360">
 
 The responsive web interface works in a phone browser. For the native application and home-screen widget, see [Android](android.md).
+
+## Download and share consumption records
+
+Open **Analysis** or **History → Export / share** on the web or Android. First choose the **last 7, 30 or 90 days**, including today in your account's time zone, then choose the file format and download/share action. This export period is independent of the dates displayed in Analysis or History and does not change them. All three durations remain available even with a shorter recorded history; missing days are identified in the report.
+
+- **CSV** contains individual entries with local timestamps (including UTC offset), quantities, historical costs, currencies and entry source. It can be opened in spreadsheet software.
+- **Consumption report (HTML)** is a self-contained document with the selected dates, generation time, time zone, total recorded cigarettes, daily average, days without entries, historical costs by currency and daily figures. It contains no account name or identifier. Open the downloaded file in a browser to print it or choose **Save as PDF** in the print dialog. PDF is produced by the browser, not by the server.
+
+The report can support a conversation with a tobacco cessation specialist. It is a record of user-entered data, not a medical assessment. A day with no entries is not treated as confirmed abstinence, and currencies are never converted or added together.
+
+On Android, choose a format, then **Save file** or **Share**. The save picker lets you choose the destination; the share sheet lets you choose the recipient application. The app grants read access only to the selected temporary export. On the web, file sharing depends on browser and device support; if unavailable, download the file and attach it yourself. Nothing is sent automatically. Shared copies contain personal consumption information and no longer update when you edit your history.

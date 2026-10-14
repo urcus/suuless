@@ -85,7 +85,7 @@ class OpenAPIContractTest(unittest.TestCase):
         entry = self.request('POST', '/api/cigarettes', status=201, json={'occurred_at': '2026-10-13T12:00:00Z', 'quantity': 2})
         self.request('PUT', '/api/settings', json={'currency': 'JPY', 'pack_price': '600'})
         self.request('POST', '/api/cigarettes', status=201, json={})
-        for path in ('/api/stats', '/api/cigarettes', '/api/export.csv'):
+        for path in ('/api/stats', '/api/cigarettes', '/api/export.csv', '/api/report.html'):
             self.request('GET', path)
         self.request('GET', '/api/stats?start=2000-01-01&end=2000-01-01')
         self.request('PATCH', f"/api/cigarettes/{entry['id']}/context", '/api/cigarettes/{entry_id}/context', json={'trigger': 'coffee'})

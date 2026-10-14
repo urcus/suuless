@@ -83,6 +83,21 @@ if '--notes-file' in sys.argv:
         self.assertIn('/releases/download/v1.0.0/suuless-1.0.0-debug.apk', notes)
         self.assertIn('--latest=true', self.calls()[-1])
 
+    def test_patch_release_has_exports_and_admin_fix_notes(self):
+        self.env['RELEASE_TAG'] = 'v1.0.1'
+        for name in self.apks:
+            (self.assets / name).rename(self.assets / name.replace('1.2.3', '1.0.1'))
+        (self.assets / 'SHA256SUMS').write_text(''.join(
+            f'{hashlib.sha256(path.read_bytes()).hexdigest()}  ./{path.name}\n'
+            for path in self.assets.glob('*.apk')))
+        result = self.run_script()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        notes = (self.root / 'calls.notes').read_text()
+        self.assertIn('first administrator', notes)
+        self.assertIn('ghcr.io/urcus/suuless:1.0.1', notes)
+        self.assertIn('/releases/download/v1.0.1/suuless-1.0.1-debug.apk', notes)
+        self.assertIn('--latest=true', self.calls()[-1])
+
     def test_resume_draft(self):
         self.env['RELEASE_STATE'] = 'draft'
         self.assertEqual(self.run_script().returncode, 0)

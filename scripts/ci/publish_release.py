@@ -99,6 +99,9 @@ def publish(environment, root=Path('.'), client=None):
         'Les fichiers et SHA256SUMS sont conservés dans le registre de paquets GitLab. '
         'La clé publique Cosign est fournie ; comparez son empreinte à votre clé de confiance avant vérification.'
     )
+    notes = Path(__file__).resolve().parents[2] / 'docs' / 'releases' / f'{tag}.md'
+    if notes.is_file():
+        description = notes.read_text() + '\n\n' + description
     path = '/releases/' + quote(tag, safe='')
     payload = dict(name=f'SuuLess {tag}', description=description)
     if client.json('GET', path, missing_ok=True) is None:

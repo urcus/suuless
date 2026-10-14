@@ -33,6 +33,7 @@ public final class MainActivity extends Activity {
     private boolean busy = false;
     private String pendingKey = null, pendingPayload = null;
     private String rangeStart, rangeEnd, localNow;
+    private String pendingExport;
     private String language = "en";
     private Translations translations;
     private JSONObject catalog, snapshot;
@@ -53,7 +54,7 @@ public final class MainActivity extends Activity {
         if(android.os.Build.VERSION.SDK_INT>=27)getWindow().getDecorView().setSystemUiVisibility(getWindow().getDecorView().getSystemUiVisibility()|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         setLanguage(getPreferences(MODE_PRIVATE).getString("language", "en"));
         server = getPreferences(MODE_PRIVATE).getString("server", ""); token = TokenStore.load(this);
-        if (state != null) { pendingKey = state.getString("pendingKey"); pendingPayload = state.getString("pendingPayload"); }
+        if (state != null) { pendingExport = state.getString("pendingExport"); pendingKey = state.getString("pendingKey"); pendingPayload = state.getString("pendingPayload"); }
         if (token.isEmpty()) login(); else { dashboard(); }
     }
     @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] results){
@@ -62,7 +63,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume(){super.onResume();PushSync.renew(this);}
     @Override protected void onSaveInstanceState(Bundle out) {
-        super.onSaveInstanceState(out); out.putString("pendingKey", pendingKey); out.putString("pendingPayload", pendingPayload);
+        super.onSaveInstanceState(out); out.putString("pendingExport",pendingExport); out.putString("pendingKey", pendingKey); out.putString("pendingPayload", pendingPayload);
     }
     @Override protected void onRestart() {
         super.onRestart();
@@ -269,7 +270,7 @@ public final class MainActivity extends Activity {
     }
     private String signed(double value){return (value>0?"+":"")+number(value);}
     private void renderAnalysis() throws Exception {
-        screen(t("nav_analysis"));periodChips();JSONObject stats=snapshot.getJSONObject("stats"),analysis=stats.getJSONObject("analysis"),comparison=analysis.getJSONObject("comparison"),period=stats.getJSONObject("period");
+        screen(t("nav_analysis"));periodChips();button(t("export_share"),this::exportConsumption);JSONObject stats=snapshot.getJSONObject("stats"),analysis=stats.getJSONObject("analysis"),comparison=analysis.getJSONObject("comparison"),period=stats.getJSONObject("period");
         text(dateLabel(rangeStart)+" — "+dateLabel(rangeEnd),13);
         LinearLayout summary=card(Ui.GREEN);cardText(summary,t("average_daily_quantity"),13,Ui.MINT,false);cardText(summary,number(analysis.getDouble("average_quantity_per_day")),38,Ui.WHITE,true);
         String percent=comparison.isNull("quantity_percent")?t("percent_unavailable"):signed(comparison.getDouble("quantity_percent"))+" %";
@@ -375,7 +376,52 @@ public final class MainActivity extends Activity {
     }
     private void history(){
         if(rangeEnd==null){dashboard();return;}
-        page="history";historyOffset=0;if(rangeEnd!=null)rangeStart=LocalDate.parse(rangeEnd).minusDays(days-1).toString();screen(t("history"));periodChips();text(dateLabel(rangeStart)+" — "+dateLabel(rangeEnd),13);button(t("past_entry"),this::entryForm);loadEntries();
+        page="history";historyOffset=0;if(rangeEnd!=null)rangeStart=LocalDate.parse(rangeEnd).minusDays(days-1).toString();screen(t("history"));periodChips();text(dateLabel(rangeStart)+" — "+dateLabel(rangeEnd),13);button(t("past_entry"),this::entryForm);button(t("export_share"),this::exportConsumption);loadEntries();
+    }
+    private void exportConsumption(){
+        new AlertDialog.Builder(this).setTitle(t("export_choose_period"))
+            .setItems(new String[]{t("last_7"),t("last_30"),t("last_90")},(dialog,index)->exportConsumptionFormat(new int[]{7,30,90}[index]))
+            .setNegativeButton(t("close_export"),null).show();
+    }
+    private void exportConsumptionFormat(int exportDays){
+        new AlertDialog.Builder(this).setTitle(t("export_share")+" · "+t("short_days",number(exportDays))).setItems(new String[]{t("download_csv"),t("consumption_report")},(dialog,choice)->{
+            final String extension=choice==0?"csv":"html",mime=choice==0?"text/csv":"text/html";
+            perform(()->{
+                LocalDate end=LocalDate.parse(get("/settings").getString("local_today"));
+                String selectedRange="?start="+end.minusDays(exportDays-1)+"&end="+end;
+                String body=(String)api((choice==0?"/export.csv":"/report.html")+selectedRange,"GET",null,null);
+                java.io.File file=ExportProvider.file(this,"suuless-"+UUID.randomUUID()+"."+extension);
+                java.io.File dir=file.getParentFile();if(!dir.isDirectory()&&!dir.mkdirs())throw new java.io.IOException();
+                java.io.File[] old=dir.listFiles();if(old!=null)for(java.io.File f:old)if(f.lastModified()<System.currentTimeMillis()-86400000L)f.delete();
+                try(java.io.FileOutputStream out=new java.io.FileOutputStream(file)){out.write(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+                return file;
+            },value->{
+                java.io.File file=(java.io.File)value;
+                new AlertDialog.Builder(this).setTitle(t("export_share")).setMessage(t("export_note")+(choice==1?"\n\n"+t("report_print_help"):""))
+                    .setPositiveButton(t("save_file"),(d,w)->{
+                        pendingExport=file.getName();
+                        startActivityForResult(new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT).addCategory(android.content.Intent.CATEGORY_OPENABLE).setType(mime).putExtra(android.content.Intent.EXTRA_TITLE,"suuless-"+(choice==0?"consumption":"report")+"-"+exportDays+"d."+extension),87);
+                    })
+                    .setNeutralButton(t(choice==0?"share_csv":"share_report"),(d,w)->{
+                        android.net.Uri uri=new android.net.Uri.Builder().scheme("content").authority(getPackageName()+".exports").appendPath(file.getName()).build();
+                        android.content.Intent intent=new android.content.Intent(android.content.Intent.ACTION_SEND).setType(mime).putExtra(android.content.Intent.EXTRA_STREAM,uri).addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        intent.setClipData(android.content.ClipData.newRawUri("SuuLess",uri));
+                        startActivity(android.content.Intent.createChooser(intent,t("export_share")));
+                    }).setNegativeButton(t("close_export"),null).show();
+            });
+        }).show();
+    }
+    @Override protected void onActivityResult(int requestCode,int resultCode,android.content.Intent result){
+        super.onActivityResult(requestCode,resultCode,result);
+        if(requestCode!=87)return;
+        final String name=pendingExport;pendingExport=null;
+        if(resultCode!=RESULT_OK||result==null||result.getData()==null||name==null)return;
+        final android.net.Uri destination=result.getData();
+        perform(()->{
+            try(java.io.InputStream in=new java.io.FileInputStream(ExportProvider.file(this,name));java.io.OutputStream out=getContentResolver().openOutputStream(destination,"wt")){
+                if(out==null)throw new java.io.IOException();byte[] buffer=new byte[8192];int n;while((n=in.read(buffer))!=-1)out.write(buffer,0,n);
+            }return null;
+        },value->Toast.makeText(this,t("export_saved"),Toast.LENGTH_SHORT).show());
     }
     private void loadEntries(){
         perform(()->get("/cigarettes"+range()+"&limit=30&offset="+historyOffset),value->{
