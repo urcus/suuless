@@ -18,6 +18,8 @@ La devise initiale est l’euro et peut être changée dans les réglages. Les s
 
 ## Analyses web
 
+Les raccourcis de 30 et 90 jours sont grisés tant que l’historique n’atteint pas ce seuil, avec la mention « En attente de données ». L’ancienneté compte les jours calendaires depuis la première consommation enregistrée jusqu’à aujourd’hui inclus, dans le fuseau du compte ; elle n’exige pas une saisie chaque jour. Sans historique, ou si la période choisie redevient indisponible après une suppression, le sélecteur revient à 7 jours. Les dates personnalisées restent accessibles. L’API expose cette information dans `history_start` (date locale ou `null`) et `history_days`, indépendamment de la plage demandée.
+
 Le filtre de dates pilote le graphique, les moyennes et le tableau quotidien. Le sélecteur du graphique permet de passer des cigarettes aux dépenses ; les devises restent séparées, sans conversion. La ligne pointillée indique la moyenne quotidienne de la période.
 
 Le lissage optionnel affiche la moyenne mobile des sept derniers jours, bornée à la période sélectionnée (moins de sept jours au début). Les graphiques horaires regroupent les quantités selon l’heure locale du compte ; une saisie groupée est affectée intégralement à son heure enregistrée. Les heures répétées au passage à l’heure d’hiver sont regroupées. La moyenne par jour de semaine est divisée par le nombre d’occurrences calendaires du jour dans la période, y compris les jours sans saisie. Ces répartitions incluent la journée en cours, encore partielle.

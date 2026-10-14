@@ -52,6 +52,31 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(result['projection']['quantity'], 150)
         self.assertEqual(result['trend'][0]['quantity'], 5)
 
+    def test_history_age_thresholds_and_account_isolation(self):
+        self.settings(timezone='UTC')
+        other = self.register('older-history')
+        self.add({'occurred_at': '2024-01-01T12:00:00Z'}, headers=other)
+        instant = datetime(2025, 4, 1, 12, tzinfo=timezone.utc)
+        with patch('server.app.now', return_value=instant):
+            self.assertEqual(self.stats()['history_days'], 0)
+            self.assertIsNone(self.stats()['history_start'])
+            for days in (1, 29, 30, 89, 90):
+                first = instant - timedelta(days=days-1)
+                entry = self.add({'occurred_at': first.isoformat()}).json
+                result = self.stats('?start=2025-04-01&end=2025-04-01')
+                self.assertEqual(result['history_days'], days)
+                self.assertEqual(result['history_start'], first.date().isoformat())
+                self.client.delete('/api/cigarettes/'+str(entry['id']), headers=self.auth)
+            self.assertEqual(self.stats()['history_days'], 0)
+
+    def test_history_age_uses_profile_calendar_not_24_hour_intervals(self):
+        self.settings(timezone='Asia/Kathmandu')
+        self.add({'occurred_at': '2025-03-03T12:00:00Z'})
+        with patch('server.app.now', return_value=datetime(2025,4,1,20,tzinfo=timezone.utc)):
+            self.assertEqual(self.stats()['history_days'], 31)
+            self.settings(timezone='UTC')
+            self.assertEqual(self.stats()['history_days'], 30)
+
     def test_auth_required_for_all_private_routes(self):
         for path in ['/api/me', '/api/stats', '/api/cigarettes', '/api/settings', '/api/tokens', '/api/export.csv']:
             self.assertEqual(self.client.get(path).status_code, 401)

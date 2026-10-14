@@ -207,5 +207,7 @@
   "hourly_figures": "Voir toutes les valeurs horaires",
   "no_sample": "Aucun jour dans cette période",
   "trend_smooth": "Lisser sur 7 jours",
-  "trend_note": "Moyenne des 7 derniers jours, limitée à la période sélectionnée. Les premiers points utilisent moins de jours ; aujourd’hui reste provisoire."
+  "trend_note": "Moyenne des 7 derniers jours, limitée à la période sélectionnée. Les premiers points utilisent moins de jours ; aujourd’hui reste provisoire.",
+  "waiting_data": "En attente de données",
+  "history_wait": "{0} jours d’historique depuis la première cigarette enregistrée. Les vues 30 et 90 jours se débloquent à leurs seuils respectifs."
 }

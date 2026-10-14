@@ -4,6 +4,7 @@ let token = sessionStorage.getItem('stop-clop-token') || '';
 let locale = localStorage.getItem('stop-clop-language') || 'en';
 if (!['en','fr','ja'].includes(locale)) locale = 'en';
 const dictionaries = {};
+let availableHistoryDays;
 let pendingEntry = null, registering = false, settings, catalog, historyOffset = 0, noticeTimer;
 const t = (key,...values) => (dictionaries[locale]?.[key] || dictionaries.en?.[key] || key).replace(/\{(\d+)\}/g,(_,i)=>values[i] ?? '');
 const number = value => new Intl.NumberFormat(locale).format(value);
@@ -28,6 +29,7 @@ async function setLanguage(code, updatePreference=true) {
   document.title=t('page_title');
   document.querySelectorAll('[data-i18n]').forEach(el=>el.textContent=t(el.dataset.i18n));
   document.querySelectorAll('[data-i18n-aria]').forEach(el=>el.setAttribute('aria-label',t(el.dataset.i18nAria)));
+  if(availableHistoryDays!==undefined)updatePeriodAvailability(availableHistoryDays);
   $('header-language').value=code; if(updatePreference)$('language').value=code; authLabels();
 }
 function disconnected() {
@@ -142,10 +144,24 @@ async function loadHistory(append=false){
   }
   historyOffset+=data.items.length;$('more-history').hidden=historyOffset>=data.total;
 }
+function updatePeriodAvailability(available){
+  availableHistoryDays=available;
+  for(const count of [30,90]){
+    const option=$('preset').querySelector(`[value="${count}"]`);option.disabled=available<count;
+    option.textContent=t(count===30?'last_30':'last_90')+(option.disabled?' — '+t('waiting_data'):'');
+  }
+  $('history-availability').textContent=available<90?t('waiting_data')+' · '+t('history_wait',number(available)):'';
+  $('history-availability').hidden=available>=90;
+}
 async function refresh(){
   await syncPreferences(await api('/settings'));
   if($('preset').value!=='custom')setRange(Number($('preset').value));
-  const data=await api(`/stats?${query()}`);
+  let data=await api(`/stats?${query()}`);
+  const available=data.history_days;
+  updatePeriodAvailability(available);
+  if(['30','90'].includes($('preset').value)&&available<Number($('preset').value)){
+    $('preset').value='7';setRange(7);data=await api(`/stats?${query()}`);
+  }
   $('today-count').textContent=number(data.today.quantity);$('today-cost').textContent=t('today_cost',costs(data.today));
   $('period-count').textContent=number(data.period.quantity);$('period-cost').textContent=costs(data.period);
   $('average').textContent=t('average',number(data.period.average_per_day),number(data.period.days));

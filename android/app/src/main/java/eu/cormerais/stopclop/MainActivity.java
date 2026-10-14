@@ -28,6 +28,7 @@ public final class MainActivity extends Activity {
     private TextView status;
     private String server = "", token = "", zone = "Europe/Paris", page = "dashboard";
     private boolean trendSmoothed = false;
+    private int historyDays = 0;
     private int days = 30, historyOffset = 0;
     private boolean busy = false;
     private String pendingKey = null, pendingPayload = null;
@@ -209,7 +210,9 @@ public final class MainActivity extends Activity {
             LocalDate end=LocalDate.parse(prefs.getString("local_today"));localNow=prefs.getString("local_datetime");rangeEnd=end.toString();rangeStart=end.minusDays(days-1).toString();
             catalog=get("/config");JSONObject push;
             try{push=get("/sync/config");push.put("enabled",true);}catch(ApiClient.HttpError error){if(error.status!=404)throw error;push=new JSONObject().put("enabled",false);}
-            return new JSONObject().put("push",push).put("settings",prefs).put("stats",get("/stats"+range()));
+            JSONObject stats=get("/stats"+range());historyDays=stats.optInt("history_days",0);
+            if(days>7&&historyDays<days){days=7;rangeStart=end.minusDays(6).toString();stats=get("/stats"+range());}
+            return new JSONObject().put("push",push).put("settings",prefs).put("stats",stats);
         },value->{
             snapshot=(JSONObject)value;setLanguage(snapshot.getJSONObject("settings").getString("language"));CounterWidget.acceptStats(this,server,token,snapshot.getJSONObject("stats"));
             if(target.equals("analysis"))renderAnalysis();else renderToday();
@@ -237,7 +240,8 @@ public final class MainActivity extends Activity {
     }
     private void periodChips(){
         LinearLayout row=new LinearLayout(this);content.addView(row);
-        for(int count:new int[]{7,30,90}){Button b=Ui.button(this,t("short_days",number(count)),days==count,()->{if(!busy){days=count;navigate(page);}});LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.setMargins(dp(3),dp(6),dp(3),dp(8));row.addView(b,p);b.setSelected(days==count);}
+        for(int count:new int[]{7,30,90}){Button b=Ui.button(this,t("short_days",number(count)),days==count,()->{if(!busy){days=count;navigate(page);}});LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,-2,1);p.setMargins(dp(3),dp(6),dp(3),dp(8));row.addView(b,p);b.setSelected(days==count);if(count>7&&historyDays<count){b.setEnabled(false);b.setBackgroundTintList(android.content.res.ColorStateList.valueOf(Ui.BORDER));b.setTextColor(Ui.MUTED);b.setContentDescription(t("short_days",number(count))+" · "+t("waiting_data"));}}
+        if(historyDays<90)text(t("waiting_data")+" · "+t("history_wait",number(historyDays)),12);
     }
     private String signed(double value){return (value>0?"+":"")+number(value);}
     private void renderAnalysis() throws Exception {

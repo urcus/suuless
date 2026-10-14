@@ -207,5 +207,7 @@
   "hourly_figures": "View all hourly figures",
   "no_sample": "No days in this period",
   "trend_smooth": "Smooth over 7 days",
-  "trend_note": "Trailing 7-day average, limited to the selected period. The first points use fewer days; today remains provisional."
+  "trend_note": "Trailing 7-day average, limited to the selected period. The first points use fewer days; today remains provisional.",
+  "waiting_data": "Waiting for data",
+  "history_wait": "{0} days of history since the first recorded cigarette. The 30- and 90-day views unlock at their respective thresholds."
 }

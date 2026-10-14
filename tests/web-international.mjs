@@ -13,8 +13,8 @@ async function lang(value){await page.waitForFunction(value=>document.documentEl
 async function saved(word){await text('#message',word);await page.waitForFunction(()=>!document.querySelector('#settings-form button').disabled);}
 async function translationCheck(code){
   const messages=await (await context.request.get(base+`/static/locales/${code}.json`)).json();
-  const nodes=await page.locator('[data-i18n]').evaluateAll(nodes=>nodes.map(node=>[node.dataset.i18n,node.textContent]));
-  for(const [key,value] of nodes)assert.equal(value,messages[key],`${code}: ${key}`);
+  const nodes=await page.locator('[data-i18n]').evaluateAll(nodes=>nodes.map(node=>[node.dataset.i18n,node.textContent,node.disabled]));
+  for(const [key,value,disabled] of nodes)assert.equal(value,messages[key]+(disabled&&['last_30','last_90'].includes(key)?' — '+messages.waiting_data:''),`${code}: ${key}`);
 }
 try{
   await page.goto(base);await text('#auth-submit','Sign in');

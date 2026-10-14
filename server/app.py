@@ -505,7 +505,11 @@ def create_app(config=None):
                            previous_start.isoformat() if previous else None,
                            previous_end.isoformat() if previous else None, end == today)
         analysis.update(habits([dict(date=d, **v) for d, v in daily.items()], period_rows, tz, end == today, g.user['currency']))
-        return jsonify(analysis=analysis, start=start.isoformat(), end=end.isoformat(), timezone=g.user['timezone'],
+        first = db().execute('SELECT MIN(occurred_at) FROM cigarettes WHERE user_id=?', (g.user['id'],)).fetchone()[0]
+        history_start = datetime.fromisoformat(first).astimezone(tz).date() if first else None
+        history_days = max(0, (today-history_start).days+1) if history_start else 0
+        return jsonify(history_start=history_start.isoformat() if history_start else None,
+                       history_days=history_days, analysis=analysis, start=start.isoformat(), end=end.isoformat(), timezone=g.user['timezone'],
                        today=total('AND occurred_at>=? AND occurred_at<?', (low, high)), total=total(),
                        period=dict(quantity=quantity, **cost_summary(period_amounts, g.user['currency']),
                                    average_per_day=round(quantity / days, 2), days=days,

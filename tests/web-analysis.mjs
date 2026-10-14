@@ -6,6 +6,24 @@ const errors=[];page.on('pageerror',error=>errors.push(error.message));
 try{
   const auth=await(await context.request.post(base+'/api/auth/register',{data:{username:`analysis-${Date.now()}`,password:'analysis-test-password',timezone:'UTC'}})).json();
   const headers={Authorization:`Bearer ${auth.token}`};
+  await page.goto(base);await page.evaluate(token=>sessionStorage.setItem('stop-clop-token',token),auth.token);await page.reload();
+  await page.waitForFunction(()=>document.querySelector('#preset').value==='7');
+  const option30=page.locator('#preset option[value="30"]'),option90=page.locator('#preset option[value="90"]');
+  assert.equal(await option30.isDisabled(),true);assert.equal(await option90.isDisabled(),true);
+  assert.match(await page.locator('#history-availability').textContent(),/Waiting for data/);
+  let oldest;
+  for(const days of [29,30,89,90]){
+    if(oldest)await context.request.delete(base+'/api/cigarettes/'+oldest,{headers});
+    const date=new Date();date.setUTCDate(date.getUTCDate()-days+1);
+    oldest=(await(await context.request.post(base+'/api/cigarettes',{headers,data:{occurred_at:date.toISOString()}})).json()).id;
+    await page.locator('#refresh').click();
+    await page.waitForFunction(days=>document.querySelector('#history-availability').hidden===(days>=90)&& (days>=90||document.querySelector('#history-availability').textContent.includes(days+' days')),days);
+    assert.equal(await option30.isDisabled(),days<30);assert.equal(await option90.isDisabled(),days<90);
+  }
+  await page.locator('#preset').selectOption('90');
+  await page.waitForFunction(()=>document.querySelector('#daily-table').children.length===90);
+  await context.request.delete(base+'/api/cigarettes/'+oldest,{headers});await page.locator('#refresh').click();
+  await page.waitForFunction(()=>document.querySelector('#preset').value==='7'&&document.querySelector('#daily-table').children.length===7);
   for(const [quantity,day] of [[8,'01'],[2,'03'],[4,'04']])assert.equal((await context.request.post(base+'/api/cigarettes',{headers,data:{quantity,occurred_at:`2025-01-${day}T12:00:00Z`}})).status(),201);
   await page.goto(base);await page.evaluate(token=>sessionStorage.setItem('stop-clop-token',token),auth.token);await page.reload();
   await page.waitForFunction(()=>document.querySelector('#today-count').textContent==='0');
