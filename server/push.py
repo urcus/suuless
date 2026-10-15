@@ -2,6 +2,7 @@
 import re
 from .sync import changed
 import sqlite3
+import secrets
 import time
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
@@ -37,8 +38,8 @@ def queue_refresh(conn, user_id):
     changed(conn, user_id)
     # Called in the same transaction as the change. No network on the request path.
     for row in conn.execute('SELECT s.token_id FROM push_subscriptions s JOIN tokens t ON t.id=s.token_id WHERE t.user_id=?', (user_id,)).fetchall():
-        conn.execute('''INSERT INTO push_outbox(token_id) VALUES (?)
-                        ON CONFLICT(token_id) DO UPDATE SET revision=lower(hex(randomblob(16))), attempts=0, next_attempt=0''', (row[0],))
+        conn.execute('''INSERT INTO push_outbox(token_id,revision) VALUES (?,?)
+                        ON CONFLICT(token_id) DO UPDATE SET revision=excluded.revision, attempts=0, next_attempt=0''', (row[0],secrets.token_hex(16)))
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -55,7 +56,8 @@ def send_refresh(internal_url, topic):
 
 def dispatch(conn, public_url, internal_url, sender=send_refresh, clock=time.time):
     """Single worker; revision checks preserve changes arriving during delivery."""
-    conn.row_factory = sqlite3.Row
+    if isinstance(conn, sqlite3.Connection):
+        conn.row_factory = sqlite3.Row
     with conn:
         conn.execute('DELETE FROM push_subscriptions WHERE token_id IN (SELECT id FROM tokens WHERE expires_at<=?)',
                      (datetime.now(timezone.utc).isoformat(timespec='microseconds'),))

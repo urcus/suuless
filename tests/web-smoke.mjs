@@ -42,7 +42,7 @@ try {
   assert.equal(first.status(),201);
   const retry=await context.request.post(`${base}/api/cigarettes`,{headers,data:{source:'streamdeck'}});
   assert.equal(retry.status(),200);
-  await page.locator('#refresh').click();
+  await page.waitForFunction(()=>!refreshPending&&!activeActions);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await waitForText('#today-count','3');
   await waitForText('#period-cost','2,10');
   const downloadEvent=page.waitForEvent('download');await page.locator('[data-view=history]').click();await page.locator('#export').click();await page.locator('#export-7').click();await page.locator('#download-csv').click();

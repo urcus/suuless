@@ -22,6 +22,7 @@ Each diagram has an editable, standalone HTML source and an SVG for direct Markd
 | Application components | [HTML](diagrams/architecture.html) | [SVG](diagrams/architecture.svg) |
 | Account synchronization | [HTML](diagrams/push-sync.html) | [SVG](diagrams/push-sync.svg) |
 | Craving outcomes | [HTML](diagrams/coaching.html) | [SVG](diagrams/coaching.svg) |
+| SQLite to PostgreSQL migration | [HTML](diagrams/postgresql-migration.html) | [SVG](diagrams/postgresql-migration.svg) |
 | Kubernetes example | [HTML](diagrams/kubernetes.html) | [SVG](diagrams/kubernetes.svg) |
 | iPhone shortcut actions | [HTML](diagrams/iphone-shortcut.html) | [SVG](diagrams/iphone-shortcut.svg) |
 

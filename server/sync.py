@@ -1,7 +1,8 @@
 """Authenticated invalidation stream; revisions survive restarts and offline clients."""
 from contextlib import closing
 from datetime import datetime, timezone
-import sqlite3
+import secrets
+from .database import connect
 import time
 
 SCHEMA = '''
@@ -13,15 +14,15 @@ CREATE TABLE IF NOT EXISTS sync_revisions (
 
 
 def changed(conn, user_id):
-    conn.execute('''INSERT INTO sync_revisions(user_id,revision) VALUES (?,lower(hex(randomblob(16))))
-                    ON CONFLICT(user_id) DO UPDATE SET revision=excluded.revision''', (user_id,))
+    conn.execute('''INSERT INTO sync_revisions(user_id,revision) VALUES (?,?)
+                    ON CONFLICT(user_id) DO UPDATE SET revision=excluded.revision''', (user_id,secrets.token_hex(16)))
 
 
 def events(database, token_id, user_id, digest, cursor='', duration=60, interval=1, clock=time.monotonic, sleep=time.sleep):
     """No open transaction during waits; revalidate session before every event."""
     deadline = clock() + duration
     heartbeat = clock()
-    with closing(sqlite3.connect(database, timeout=5)) as conn:
+    with closing(connect(database, timeout=5)) as conn:
         while clock() < deadline:
             row = conn.execute('''SELECT COALESCE(s.revision, ?) FROM tokens t
                 LEFT JOIN sync_revisions s ON s.user_id=t.user_id

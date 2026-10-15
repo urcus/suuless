@@ -20,6 +20,7 @@ Start with deployment to run your own instance, or the user guides if you alread
 | Guide | What you will find |
 |---|---|
 | [Docker Compose](deployment/docker.md) | Quick start, HTTPS, registration, backups and upgrades |
+| [PostgreSQL and migration](deployment/postgresql.md) | External database configuration, verified SQLite migration and rollback boundaries |
 | [Kubernetes](deployment/kubernetes.md) | Generic manifests, persistent storage, optional HTTPS and operations |
 | [Example Kubernetes files](../deploy/kubernetes/) | Namespace, Deployment, PVC, Service and optional Ingress |
 

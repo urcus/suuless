@@ -13,6 +13,12 @@ python3 -m venv .venv
 
 The Flask development server is for local testing. Docker uses Gunicorn. Runtime-only installations use `requirements.txt`; development dependencies add OpenAPI validation and response-schema checks.
 
+## PostgreSQL integration tests
+
+Install `requirements-dev.txt`; the pinned binary Psycopg wheel includes its native libraries. Supply `TEST_POSTGRES_URL` for a disposable PostgreSQL 17 service, then run the normal Python suite. The test role needs `CREATEDB`; each test creates/drops a randomly named database and never clears an existing database. Do not point this at production. Without the variable, PostgreSQL integration cases are explicitly skipped; SQLite tests still run. GitHub and GitLab API jobs provide an isolated PostgreSQL service and run both backends.
+
+Coverage includes migration dry-run/commit, table-content verification, identity sequences, preserved sessions/keys/costs, concurrent idempotency and startup, rollback, SSE, coaching and reports. The browser test server can also use `DATABASE_URL`; use an empty disposable target. The ordinary temporary SQLite path remains the default.
+
 ## Browser tests
 
 Use a test database and allow registration: tests create accounts and entries.

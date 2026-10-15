@@ -147,7 +147,7 @@ def register_routes(app, db, now, stamp, body, fail, integer, bounds, entries):
         for trigger in TRIGGERS[1:]:
             c = db().execute('SELECT COALESCE(SUM(quantity),0) FROM cigarettes WHERE user_id=? AND trigger=? AND occurred_at>=? AND occurred_at<?',
                              (g.user['id'], trigger, low, high)).fetchone()[0]
-            r = db().execute("SELECT COUNT(*),COALESCE(SUM(outcome='passed'),0) FROM cravings WHERE user_id=? AND trigger=? AND started_at>=? AND started_at<?",
+            r = db().execute("SELECT COUNT(*),COALESCE(SUM(CASE WHEN outcome='passed' THEN 1 ELSE 0 END),0) FROM cravings WHERE user_id=? AND trigger=? AND started_at>=? AND started_at<?",
                              (g.user['id'], trigger, low, high)).fetchone()
             trigger_counts.append(dict(trigger=trigger, cigarettes=c, cravings=r[0], passed=r[1]))
         return jsonify(plan={**plan, 'daily_goal': g.user['daily_target']}, current_goal=goal(plan, today.isoformat()),
@@ -259,10 +259,10 @@ def register_routes(app, db, now, stamp, body, fail, integer, bounds, entries):
             if not existing:existing=db().execute("SELECT * FROM cravings WHERE user_id=? AND outcome='pending'",(g.user['id'],)).fetchone()
             if existing:return jsonify(dict(existing)),200
             instant=now()
-            cursor=db().execute('INSERT INTO cravings(user_id,started_at,pause_until,trigger,strategy,idempotency_key) VALUES(?,?,?,?,?,?)',
+            cursor=db().execute('INSERT INTO cravings(user_id,started_at,pause_until,trigger,strategy,idempotency_key) VALUES(?,?,?,?,?,?) RETURNING id',
                                 (g.user['id'],stamp(instant),stamp(instant+timedelta(minutes=minutes)),trigger,strategy,key))
             queue_refresh(db(),g.user['id'])
-            row=db().execute('SELECT * FROM cravings WHERE id=?',(cursor.lastrowid,)).fetchone()
+            row=db().execute('SELECT * FROM cravings WHERE id=?',(cursor.fetchone()[0],)).fetchone()
         return jsonify(dict(row)),201
 
     @app.put('/api/cravings/<int:craving_id>')
@@ -279,9 +279,9 @@ def register_routes(app, db, now, stamp, body, fail, integer, bounds, entries):
             instant=stamp(now());entry=None
             if outcome=='smoked':
                 unit=int((Decimal(g.user['pack_price_micros'])/g.user['pack_size']).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
-                cursor=db().execute('INSERT INTO cigarettes(user_id,occurred_at,quantity,unit_cost_micros,source,currency,trigger) VALUES(?,?,1,?,?,?,?)',
+                cursor=db().execute('INSERT INTO cigarettes(user_id,occurred_at,quantity,unit_cost_micros,source,currency,trigger) VALUES(?,?,1,?,?,?,?) RETURNING id',
                                     (g.user['id'],instant,unit,'api',g.user['currency'],row['trigger']))
-                entry=cursor.lastrowid;invalidate_checkins(db(),g.user['id'],instant)
+                entry=cursor.fetchone()[0];invalidate_checkins(db(),g.user['id'],instant)
             db().execute('UPDATE cravings SET outcome=?,resolved_at=?,cigarette_id=? WHERE id=?',(outcome,instant,entry,craving_id))
             queue_refresh(db(),g.user['id'])
             row=db().execute('SELECT * FROM cravings WHERE id=?',(craving_id,)).fetchone()

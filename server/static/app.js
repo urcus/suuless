@@ -39,6 +39,7 @@ function disconnected() {
   $('token-value').value=''; $('new-token').hidden=true;
 }
 async function api(path,method='GET',data,extra={}) {
+  const session=token;
   let response;
   try {
     response=await fetch('/api'+path,{method,headers:{'Accept-Language':locale,
@@ -46,20 +47,24 @@ async function api(path,method='GET',data,extra={}) {
       ...(data!==undefined?{'Content-Type':'application/json'}:{}),...extra},
       ...(data!==undefined?{body:JSON.stringify(data)}:{})});
   } catch { throw new Error(t('network_error')); }
+  if(session!==token)throw new Error(t('auth_required'));
   if(!response.ok) {
     const payload=await response.json().catch(()=>({}));
+    if(session!==token)throw new Error(t('auth_required'));
     if(response.status===401&&!path.startsWith('/auth/'))disconnected();
     const error=new Error(payload.error||t('http_error',response.status)); error.status=response.status; throw error;
   }
   if(response.status===204)return null;
-  return path.split('?')[0].match(/\.(csv|html)$/)?response.blob():response.json();
+  const result=await (path.split('?')[0].match(/\.(csv|html)$/)?response.blob():response.json());
+  if(session!==token)throw new Error(t('auth_required'));
+  return result;
 }
 function action(id,event,callback) {
   $(id).addEventListener(event,async e=>{
     e.preventDefault();
     const buttons=[...$(id).querySelectorAll('button'),...($(id).tagName==='BUTTON'?[$(id)]:[])];
-    buttons.forEach(b=>b.disabled=true);
-    try{await callback(e);}catch(err){notice(err.message,true);}finally{buttons.forEach(b=>b.disabled=false);}
+    buttons.forEach(b=>b.disabled=true);activeActions++;
+    try{await callback(e);}catch(err){notice(err.message,true);}finally{activeActions--;buttons.forEach(b=>b.disabled=false);}
   });
 }
 function dateHere(){return settings.local_today;}
@@ -68,7 +73,7 @@ function setRange(days) {
   $('start-date').value=start.toISOString().slice(0,10);$('end-date').value=end;
 }
 function query(){return `start=${$('start-date').value}&end=${$('end-date').value}`;}
-function localInputNow(){$('occurred-at').value=settings.local_datetime.slice(0,16);}
+function localInputNow(){entryTimeDirty=false;$('occurred-at').value=settings.local_datetime.slice(0,16);}
 function cell(text,tag='td'){const el=document.createElement(tag);el.textContent=text;return el;}
 function dayLabel(value){return new Date(value+'T12:00:00Z').toLocaleDateString(locale,{timeZone:'UTC'});}
 function pricePrecision(){
@@ -102,17 +107,18 @@ async function loadCatalog(){
   $('initial-timezone').textContent=t('initial_timezone',detectedTimezone());
 }
 const preferenceFields={pack_price:'pack-price',currency:'currency',pack_size:'pack-size',daily_target:'daily-target',language:'language',timezone:'timezone'};
-let preferenceBaseline=null;
+let preferenceBaseline=null, entryTimeDirty=false;
 function preferenceDraft(){return Object.fromEntries(Object.entries(preferenceFields).map(([key,id])=>[key,$(id).value]));}
 async function syncPreferences(prefs,force=false){
-  const draft=preferenceDraft(),dirty=new Set();
-  if(preferenceBaseline&&!force)for(const key of Object.keys(preferenceFields))if(draft[key]!==preferenceBaseline[key])dirty.add(key);
-  // Keep a price paired with its selected currency while the user is editing either.
-  if(dirty.has('currency')||dirty.has('pack_price')){dirty.add('currency');dirty.add('pack_price');}
   const oldTimezone=settings?.timezone,changedLanguage=locale!==prefs.language;
   settings=prefs;
   if(changedLanguage)await setLanguage(prefs.language,false);
   if(!catalog||changedLanguage)await loadCatalog();
+  // Read drafts after asynchronous work, so edits made during a request survive.
+  const draft=preferenceDraft(),dirty=new Set();
+  if(preferenceBaseline&&!force)for(const key of Object.keys(preferenceFields))if(draft[key]!==preferenceBaseline[key])dirty.add(key);
+  // Keep a price paired with its selected currency while the user is editing either.
+  if(dirty.has('currency')||dirty.has('pack_price')){dirty.add('currency');dirty.add('pack_price');}
   const baseline={};
   for(const [key,id] of Object.entries(preferenceFields)){
     const value=dirty.has(key)?draft[key]:String(prefs[key]);
@@ -120,7 +126,7 @@ async function syncPreferences(prefs,force=false){
     baseline[key]=dirty.has(key)?preferenceBaseline[key]:String(prefs[key]);
   }
   preferenceBaseline=baseline;pricePrecision();
-  if(force||oldTimezone!==prefs.timezone)localInputNow();
+  if(force||(!entryTimeDirty&&oldTimezone!==prefs.timezone))localInputNow();
 }
 function preferenceChanges(){
   const draft=preferenceDraft(),changes={};
@@ -129,9 +135,16 @@ function preferenceChanges(){
   for(const key of ['pack_size','daily_target'])if(key in changes)changes[key]=Number(changes[key]);
   return changes;
 }
-async function loadHistory(append=false){
+async function loadHistory(append=false,preserve=false){
+  const count=preserve?Math.max(20,historyOffset):20;
+  const offset=append?historyOffset:0,range=query();
+  let data={items:[],total:0};
+  for(let loaded=0;loaded<count;){
+    const page=await api(`/cigarettes?${range}&limit=${Math.min(500,count-loaded)}&offset=${offset+loaded}`);
+    data.items.push(...page.items);data.total=page.total;loaded+=page.items.length;
+    if(!page.items.length||offset+loaded>=page.total)break;
+  }
   if(!append){historyOffset=0;$('history').replaceChildren();}
-  const data=await api(`/cigarettes?${query()}&limit=20&offset=${historyOffset}`);
   $('history-range').textContent=dayLabel($('start-date').value)+' — '+dayLabel($('end-date').value);
   $('history-total').textContent=data.total?t('history_total',number(data.total)):t('no_entries');
   for(const row of data.items){
@@ -156,9 +169,35 @@ function updatePeriodAvailability(available){
   $('history-availability').textContent=available<90?t('waiting_data')+' · '+t('history_wait',number(available)):'';
   $('history-availability').hidden=available>=90;
 }
-async function refresh(){
+let refreshQueue=Promise.resolve(),refreshPending=0,activeActions=0,autoRefreshing=false,lastDisplayedRange='';
+function refresh(preserveHistory=false){
+  const session=token;
+  refreshPending++;
+  const work=refreshQueue.catch(()=>{}).then(()=>{
+    if(!session||session!==token)return;
+    return refreshData(preserveHistory);
+  });
+  refreshQueue=work;
+  return work.finally(()=>refreshPending--);
+}
+async function automaticRefresh(){
+  if(!token||!settings||$('dashboard').hidden||document.visibilityState!=='visible'||!navigator.onLine||activeActions||refreshPending||autoRefreshing)return;
+  // Do not apply an unfinished custom range while it is being edited.
+  if(document.activeElement?.closest('#range-form')||($('preset').value==='custom'&&query()!==lastDisplayedRange))return;
+  autoRefreshing=true;
+  try{await refresh(true);if(token&&activeView==='settings')await loadTokens();}
+  catch{/* Keep the last displayed data; retry on the next tick or reconnect. */}
+  finally{autoRefreshing=false;}
+}
+setInterval(automaticRefresh,10000);
+document.addEventListener('visibilitychange',automaticRefresh);
+window.addEventListener('focus',automaticRefresh);
+window.addEventListener('online',automaticRefresh);
+$('occurred-at').addEventListener('input',()=>entryTimeDirty=true);
+async function refreshData(preserveHistory=false){
   await syncPreferences(await api('/settings'));
   if($('preset').value!=='custom')setRange(Number($('preset').value));
+  lastDisplayedRange=query();
   let data=await api(`/stats?${query()}`);
   const available=data.history_days;
   updatePeriodAvailability(available);
@@ -172,7 +211,7 @@ async function refresh(){
   $('all-time').textContent=`${t('quantity_count',number(data.total.quantity))} · ${costs(data.total)}`;
   $('target-label').textContent=t('target_label',number(settings.daily_target));$('timezone-label').textContent=t('timezone_label',data.timezone);
   analysisData=data;renderAnalysis();
-  await loadHistory();
+  await loadHistory(false,preserveHistory);
   await loadCoaching();
 }
 let analysisData;
@@ -296,8 +335,7 @@ action('entry-form','submit',async()=>{
 });
 action('preset','change',async()=>{$('range-form').hidden=$('preset').value!=='custom';if($('preset').value!=='custom'){setRange(Number($('preset').value));await refresh();}});
 action('range-form','submit',async()=>{$('preset').value='custom';await refresh();});
-action('refresh','click',async()=>{if($('preset').value!=='custom')setRange(Number($('preset').value));await Promise.all([refresh(),loadTokens()]);});
-action('more-history','click',()=>loadHistory(true));
+action('more-history','click',async()=>{await refreshQueue.catch(()=>{});await loadHistory(true);});
 action('timezone-search','input',()=>timezoneOptions());
 document.querySelector('.settings').addEventListener('toggle',()=>{
   if(document.querySelector('.settings').open)loadCatalog().catch(err=>notice(err.message,true));

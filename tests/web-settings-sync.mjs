@@ -12,7 +12,7 @@ async function signIn(page,register=false){
   await page.locator('#auth-submit').click();await page.waitForFunction(()=>document.querySelector('#today-count').textContent==='0');
   await page.locator('[data-view=settings]').click();
 }
-async function refresh(page){await page.locator('#refresh').click();await page.waitForFunction(()=>!document.querySelector('#refresh').disabled);}
+async function refresh(page){await page.waitForFunction(()=>!refreshPending&&!activeActions);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForFunction(()=>!autoRefreshing);}
 async function save(page){await page.locator('#settings-form button').click();await page.waitForFunction(()=>!document.querySelector('#settings-form button').disabled);}
 try{
   await signIn(first,true);await signIn(second);

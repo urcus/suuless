@@ -1,4 +1,4 @@
-"""SuuLess: one SQLite database, strictly user-scoped resources."""
+"""SuuLess: strictly user-scoped resources on SQLite or PostgreSQL."""
 import click
 from contextlib import closing
 import csv
@@ -12,7 +12,7 @@ import threading
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from babel.numbers import get_currency_precision
-from pathlib import Path
+from .database import connect, columns as table_columns, configured_database, prepare_directory
 from .timezones import (VALID_TIMEZONES, ALIASES, TZDATA_VERSION, get_zone,
                         canonical_timezone, timezone_catalog, timezone_info)
 
@@ -111,9 +111,52 @@ def initialize_account(conn, config):
     conn.execute('INSERT INTO installation_state(id,initial_account_handled,admin_initialized) VALUES(1,1,1) ON CONFLICT(id) DO UPDATE SET admin_initialized=1')
 
 
+def initialize_database(conn, config, commit=True):
+    conn.executescript(SCHEMA + PUSH_SCHEMA + SYNC_SCHEMA + COACHING_SCHEMA + ACCOUNT_SCHEMA)
+    # Serialize additive migrations across Gunicorn workers; preserve existing EUR data.
+    conn.execute('BEGIN IMMEDIATE')
+    try:
+        columns = set(table_columns(conn, 'users'))
+        for column, definition in [('role', "TEXT NOT NULL DEFAULT 'user'"), ('active', 'INTEGER NOT NULL DEFAULT 1'), ('suspended', 'INTEGER NOT NULL DEFAULT 0'), ('email', 'TEXT'), ('email_verified', 'INTEGER NOT NULL DEFAULT 0')]:
+            if column not in columns:
+                conn.execute(f'ALTER TABLE users ADD COLUMN {column} {definition}')
+        conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email)')
+        for column, definition in [('language', "TEXT NOT NULL DEFAULT 'en'"),
+                                   ('currency', "TEXT NOT NULL DEFAULT 'EUR'"),
+                                   ('pack_price_micros', 'INTEGER NOT NULL DEFAULT 12000000')]:
+            if column not in columns:
+                conn.execute(f'ALTER TABLE users ADD COLUMN {column} {definition}')
+                if column == 'pack_price_micros':
+                    conn.execute('UPDATE users SET pack_price_micros=pack_price_cents*10000')
+        columns = set(table_columns(conn, 'cigarettes'))
+        if 'currency' not in columns:
+            conn.execute("ALTER TABLE cigarettes ADD COLUMN currency TEXT NOT NULL DEFAULT 'EUR'")
+        if 'trigger' not in columns:
+            conn.execute("ALTER TABLE cigarettes ADD COLUMN trigger TEXT NOT NULL DEFAULT ''")
+        columns = set(table_columns(conn, 'tokens'))
+        for column, definition in [('kind', "TEXT NOT NULL DEFAULT 'legacy'"),
+                                   ('client', 'TEXT'), ('created_at', 'TEXT')]:
+            if column not in columns:
+                conn.execute(f'ALTER TABLE tokens ADD COLUMN {column} {definition}')
+        # Old sessions were always named Session, but API keys could use that name too.
+        conn.execute("UPDATE tokens SET kind='api' WHERE kind='legacy' AND name<>'Session'")
+        # Never reuse an account ID after deletion (including requests still in flight).
+        conn.execute("INSERT INTO account_sequence SELECT 1,COALESCE(MAX(id),0) FROM users WHERE true ON CONFLICT(id) DO UPDATE SET last_id=CASE WHEN account_sequence.last_id>excluded.last_id THEN account_sequence.last_id ELSE excluded.last_id END")
+        state_columns = set(table_columns(conn, 'installation_state'))
+        if 'admin_initialized' not in state_columns:
+            conn.execute('ALTER TABLE installation_state ADD COLUMN admin_initialized INTEGER NOT NULL DEFAULT 0')
+        initialize_account(conn, config)
+        if commit:
+            conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
 def create_app(config=None):
     app = Flask(__name__, static_folder='static', static_url_path='/static')
     app.config.update(DATABASE=os.environ.get('DATABASE', 'data/stopclop.db'),
+                      DATABASE_URL=os.environ.get('DATABASE_URL', ''),
                       ALLOW_REGISTRATION=os.environ.get('ALLOW_REGISTRATION', 'true').lower() == 'true',
                       ADMIN_USERNAME=os.environ.get('ADMIN_USERNAME', ''),
                       ADMIN_PASSWORD=os.environ.get('ADMIN_PASSWORD', ''),
@@ -122,53 +165,18 @@ def create_app(config=None):
                       PUSH_INTERNAL_URL=os.environ.get('PUSH_INTERNAL_URL', ''))
     if config:
         app.config.update(config)
+        # An explicit SQLite path (notably test fixtures) overrides inherited env.
+        if 'DATABASE' in config and 'DATABASE_URL' not in config:
+            app.config['DATABASE_URL'] = ''
     app.config['SMTP_ENV_CONFIG'] = environment_mail_config()
-    Path(app.config['DATABASE']).parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(app.config['DATABASE'])) as conn:
-        conn.executescript(SCHEMA + PUSH_SCHEMA + SYNC_SCHEMA + COACHING_SCHEMA + ACCOUNT_SCHEMA)
-        # Serialize additive migrations across Gunicorn workers; preserve existing EUR data.
-        conn.execute('BEGIN IMMEDIATE')
-        try:
-            columns = {row[1] for row in conn.execute('PRAGMA table_info(users)')}
-            for column, definition in [('role', "TEXT NOT NULL DEFAULT 'user'"), ('active', 'INTEGER NOT NULL DEFAULT 1'), ('suspended', 'INTEGER NOT NULL DEFAULT 0'), ('email', 'TEXT'), ('email_verified', 'INTEGER NOT NULL DEFAULT 0')]:
-                if column not in columns:
-                    conn.execute(f'ALTER TABLE users ADD COLUMN {column} {definition}')
-            conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_email ON users(email)')
-            for column, definition in [('language', "TEXT NOT NULL DEFAULT 'en'"),
-                                       ('currency', "TEXT NOT NULL DEFAULT 'EUR'"),
-                                       ('pack_price_micros', 'INTEGER NOT NULL DEFAULT 12000000')]:
-                if column not in columns:
-                    conn.execute(f'ALTER TABLE users ADD COLUMN {column} {definition}')
-                    if column == 'pack_price_micros':
-                        conn.execute('UPDATE users SET pack_price_micros=pack_price_cents*10000')
-            columns = {row[1] for row in conn.execute('PRAGMA table_info(cigarettes)')}
-            if 'currency' not in columns:
-                conn.execute("ALTER TABLE cigarettes ADD COLUMN currency TEXT NOT NULL DEFAULT 'EUR'")
-            if 'trigger' not in columns:
-                conn.execute("ALTER TABLE cigarettes ADD COLUMN trigger TEXT NOT NULL DEFAULT ''")
-            columns = {row[1] for row in conn.execute('PRAGMA table_info(tokens)')}
-            for column, definition in [('kind', "TEXT NOT NULL DEFAULT 'legacy'"),
-                                       ('client', 'TEXT'), ('created_at', 'TEXT')]:
-                if column not in columns:
-                    conn.execute(f'ALTER TABLE tokens ADD COLUMN {column} {definition}')
-            # Old sessions were always named Session, but API keys could use that name too.
-            conn.execute("UPDATE tokens SET kind='api' WHERE kind='legacy' AND name<>'Session'")
-            # Never reuse an account ID after deletion (including requests still in flight).
-            conn.execute("INSERT INTO account_sequence SELECT 1,COALESCE(MAX(id),0) FROM users WHERE true ON CONFLICT(id) DO UPDATE SET last_id=MAX(last_id,excluded.last_id)")
-            state_columns = {row[1] for row in conn.execute('PRAGMA table_info(installation_state)')}
-            if 'admin_initialized' not in state_columns:
-                conn.execute('ALTER TABLE installation_state ADD COLUMN admin_initialized INTEGER NOT NULL DEFAULT 0')
-            initialize_account(conn, app.config)
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
+    app.config['DATABASE_TARGET'] = configured_database(app.config)
+    prepare_directory(app.config['DATABASE_TARGET'])
+    with closing(connect(app.config['DATABASE_TARGET'])) as conn:
+        initialize_database(conn, app.config)
 
     def db():
         if 'db' not in g:
-            g.db = sqlite3.connect(app.config['DATABASE'], timeout=15)
-            g.db.row_factory = sqlite3.Row
-            g.db.execute('PRAGMA foreign_keys=ON')
+            g.db = connect(app.config['DATABASE_TARGET'])
         return g.db
 
     @app.teardown_appcontext
@@ -219,9 +227,9 @@ def create_app(config=None):
         secret = secrets.token_urlsafe(32)
         created = now()
         expiry = stamp(created + timedelta(days=days))
-        cursor = db().execute('INSERT INTO tokens(user_id,digest,name,expires_at,kind,client,created_at) VALUES(?,?,?,?,?,?,?)',
+        cursor = db().execute('INSERT INTO tokens(user_id,digest,name,expires_at,kind,client,created_at) VALUES(?,?,?,?,?,?,?) RETURNING id',
                               (user_id, hashlib.sha256(secret.encode()).hexdigest(), name, expiry, kind, client, stamp(created)))
-        return dict(token=secret, id=cursor.lastrowid, expires_at=expiry)
+        return dict(token=secret, id=cursor.fetchone()[0], expires_at=expiry)
 
     def session_duration(data):
         client = data.get('client', 'web')
@@ -309,7 +317,7 @@ def create_app(config=None):
                     deliver_account_email(email, 'activate', user_id, locale)
                     result = dict(activation_required=True, message=translate('email_requested'))
                 else:
-                    result = issue_token(cursor.lastrowid, 'Session', days, 'session', data.get('client', 'web'))
+                    result = issue_token(user_id, 'Session', days, 'session', data.get('client', 'web'))
         except sqlite3.IntegrityError:
             fail('username_taken', 409)
         return jsonify(result), 201
@@ -405,7 +413,7 @@ def create_app(config=None):
             fail('invalid_input')
         if not sync_slots.acquire(blocking=False):
             return jsonify(error='Synchronization capacity reached'), 503, {'Retry-After': '30'}
-        stream = events(app.config['DATABASE'], g.token['id'], g.user['id'], g.token['digest'], cursor)
+        stream = events(app.config['DATABASE_TARGET'], g.token['id'], g.user['id'], g.token['digest'], cursor)
         released = False
         def release():
             nonlocal released
@@ -569,13 +577,12 @@ def create_app(config=None):
                 previous = db().execute('SELECT * FROM cigarettes WHERE user_id=? AND idempotency_key=?', (g.user['id'], key)).fetchone()
                 if previous:
                     return jsonify(serialize(previous)), 200
-            try:
-                cursor = db().execute('INSERT INTO cigarettes(user_id,occurred_at,quantity,unit_cost_micros,source,idempotency_key,currency,trigger) VALUES(?,?,?,?,?,?,?,?)',
-                                      (g.user['id'], stamp(occurred), quantity, unit, source, key, g.user['currency'], trigger))
-            except sqlite3.IntegrityError:
+            inserted = db().execute('INSERT INTO cigarettes(user_id,occurred_at,quantity,unit_cost_micros,source,idempotency_key,currency,trigger) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id,idempotency_key) DO NOTHING RETURNING id',
+                                    (g.user['id'], stamp(occurred), quantity, unit, source, key, g.user['currency'], trigger)).fetchone()
+            if inserted is None:
                 previous = db().execute('SELECT * FROM cigarettes WHERE user_id=? AND idempotency_key=?', (g.user['id'], key)).fetchone()
                 return jsonify(serialize(previous)), 200
-            row = db().execute('SELECT * FROM cigarettes WHERE id=?', (cursor.lastrowid,)).fetchone()
+            row = db().execute('SELECT * FROM cigarettes WHERE id=?', (inserted[0],)).fetchone()
             invalidate_checkins(db(), g.user['id'], row['occurred_at'])
             queue_refresh(db(), g.user['id'])
         return jsonify(serialize(row)), 201

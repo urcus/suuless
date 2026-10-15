@@ -32,7 +32,7 @@ Daily rows show quantity, cost and differences from the period average. Period t
 
 English is the default, regardless of browser or phone language. English, French and Japanese are available before and after login. Authenticated preferences are stored on the server; pre-login choices are local. API messages, dates, numbers and currency labels follow the selected language.
 
-Saving preferences updates only changed fields; currency and price are always submitted together. The web Refresh button reloads settings while preserving unsaved edits. Android's settings refresh replaces the form with server values. Changes are not pushed automatically into an already open settings form.
+Saving preferences updates only changed fields; currency and price are always submitted together. The web interface refreshes automatically every 10 seconds while its tab is visible and online, and when you return to it or reconnect. Entries added from Android, an iPhone shortcut or another session appear without reloading the page. Unsaved settings and journey edits are preserved, along with already loaded history rows. An unfinished custom date range pauses automatic refresh until applied. Android's settings refresh replaces the form with server values.
 
 Currencies come from Babel/CLDR with localized names and decimal precision: for example EUR 12.50, JPY 600 or KWD 1.234. Changing currency requires a new price. Historical entries retain their original currency and exports include it; no exchange-rate conversion takes place.
 

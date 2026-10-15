@@ -19,6 +19,10 @@ if [[ "$RELEASE_TAG" == v1.0.1 ]]; then
   latest=true
   title="SuuLess v1.0.1 — Exports and administrator initialization fix"
 fi
+if [[ "$RELEASE_TAG" == v1.0.2 ]]; then
+  latest=true
+  title="SuuLess v1.0.2 — PostgreSQL support and automatic web updates"
+fi
 cd dist/release
 for asset in "suuless-${version}-debug.apk" "suuless-${version}-release-unsigned.apk" image-reference.txt cosign-identity.txt signature-verification.json; do
   test -s "$asset"

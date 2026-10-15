@@ -1,12 +1,18 @@
-# Android synchronization
+# Client synchronization
 
 [Documentation](../README.md) · [Project home](../../README.md)
 
-The [sequence diagram](../assets/diagrams/push-sync.html) shows the direct flow between Android and SuuLess. No Firebase account, ntfy server or relay app is required.
+The [sequence diagram](../assets/diagrams/push-sync.html) shows the direct flow between Android and SuuLess. No Firebase account, ntfy server or relay app is required. The diagram depicts the default SQLite backend; PostgreSQL uses the same revision protocol.
 
 ![Authenticated refresh signals from SQLite through the backend to Android](../assets/diagrams/push-sync.svg)
 
-## Client behavior
+## Web client
+
+The web dashboard polls every 10 seconds while authenticated, visible and online. Focus, visibility and online events also request a refresh. Updates reload settings, statistics, history and coaching; the Settings view also reloads keys/sessions. This includes changes made by Android and API integrations and advances preset date ranges when the account-local day changes. The web client does not open an SSE stream.
+
+Refreshes are serialized; background requests are skipped while an action or refresh is pending. Hidden tabs and offline clients do not poll. Failed refreshes keep the last displayed data and retry at the next opportunity; a 401 ends the session. Responses from a previous login are rejected. Unsaved preferences and journey edits, manual entry timestamps and loaded history depth are preserved. An unapplied custom range pauses polling to avoid submitting draft dates. The journey form's explicit reload control remains available to discard a conflicting draft.
+
+## Android client behavior
 
 After login, the app configures synchronization using the stored server address and encrypted session. It requests notification permission and a battery-optimization exemption. A persistent notification can stop synchronization; dashboard controls can enable it again or revisit permissions. Declining does not disable the app or widget: manual and periodic refresh remain available. The disabled setting survives upgrades.
 
@@ -14,7 +20,7 @@ The service uses an authenticated SSE stream. It reloads settings and statistics
 
 ## Protocol
 
-Each mutation updates a per-user random revision in the same SQLite transaction. The stream contains only an invalidation signal and revision, not history or secrets. Accounts remain isolated. Bearer tokens go in `Authorization`, never in URLs. Sessions are revalidated while streaming and the stream closes on expiration or revocation. Persisted revisions allow recovery after server restarts or disconnected clients.
+Each mutation updates a per-user random revision in the same database transaction. The stream contains only an invalidation signal and revision, not history or secrets. Accounts remain isolated. Bearer tokens go in `Authorization`, never in URLs. Sessions are revalidated while streaming and the stream closes on expiration or revocation. Persisted revisions allow recovery after server restarts or disconnected clients.
 
 `GET /api/sync/config` returns `{transport:"sse",path:"/api/sync/events"}`. `GET /api/sync/events` returns `text/event-stream`. Optional `Last-Event-ID` is a 32-character lowercase hexadecimal revision. Events are `refresh` and `revoked`, with `data: {}`. Keepalive comments occur at most ten seconds apart and connections renew after 60 seconds. Clients commit their cursor only after successfully reloading data. See [OpenAPI](../api/openapi.yaml).
 

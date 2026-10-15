@@ -16,13 +16,13 @@ try{
     if(oldest)await context.request.delete(base+'/api/cigarettes/'+oldest,{headers});
     const date=new Date();date.setUTCDate(date.getUTCDate()-days+1);
     oldest=(await(await context.request.post(base+'/api/cigarettes',{headers,data:{occurred_at:date.toISOString()}})).json()).id;
-    await page.locator('#refresh').click();
+    await page.waitForFunction(()=>!refreshPending&&!activeActions);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
     await page.waitForFunction(days=>document.querySelector('#history-availability').hidden===(days>=90)&& (days>=90||document.querySelector('#history-availability').textContent.includes(days+' days')),days);
     assert.equal(await option30.isDisabled(),days<30);assert.equal(await option90.isDisabled(),days<90);
   }
   await page.locator('[data-view=analysis]').click();await page.locator('#preset').selectOption('90');
   await page.waitForFunction(()=>document.querySelector('#daily-table').children.length===90);
-  await context.request.delete(base+'/api/cigarettes/'+oldest,{headers});await page.locator('#refresh').click();
+  await context.request.delete(base+'/api/cigarettes/'+oldest,{headers});await page.waitForFunction(()=>!refreshPending&&!activeActions);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   await page.waitForFunction(()=>document.querySelector('#preset').value==='7'&&document.querySelector('#daily-table').children.length===7);
   for(const [quantity,day] of [[8,'01'],[2,'03'],[4,'04']])assert.equal((await context.request.post(base+'/api/cigarettes',{headers,data:{quantity,occurred_at:`2025-01-${day}T12:00:00Z`}})).status(),201);
   await page.goto(base);await page.evaluate(token=>sessionStorage.setItem('stop-clop-token',token),auth.token);await page.reload();
@@ -47,7 +47,7 @@ try{
   assert.equal(await page.locator('#analysis-today').isVisible(),false);
   await context.request.put(base+'/api/settings',{headers,data:{currency:'JPY',pack_price:'600'}});
   await context.request.post(base+'/api/cigarettes',{headers,data:{quantity:1,occurred_at:'2025-01-04T13:00:00Z'}});
-  await page.locator('#refresh').click();await page.waitForFunction(()=>document.querySelector('#analysis-average-cost').textContent.includes('JPY'));
+  await page.waitForFunction(()=>!refreshPending&&!activeActions);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForFunction(()=>document.querySelector('#analysis-average-cost').textContent.includes('JPY'));
   await page.locator('#chart-currency').selectOption('JPY');assert.match(await page.locator('#chart .bar-column').last().getAttribute('title'),/30/);
   await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:'test-results/analysis-mobile.png',fullPage:true});

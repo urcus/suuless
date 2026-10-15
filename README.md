@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![API: OpenAPI](https://img.shields.io/badge/API-OpenAPI-blue.svg)](docs/api/README.md)
 
-SuuLess is a self-hosted cigarette consumption tracker. Its web interface, native Android app and Stream Deck API share the same history, with separate user accounts. The interface supports English, French and Japanese. Data stays in a SQLite database on your server.
+SuuLess is a self-hosted cigarette consumption tracker. Its web interface, native Android app and Stream Deck API share the same history, with separate user accounts. The interface supports English, French and Japanese. Data stays on your server, in the default SQLite database or an optional external PostgreSQL database.
 
 ## Features
 
@@ -51,7 +51,7 @@ On iPhone, create a **SuuLess +1** button with Apple Shortcuts and add it to you
 
 | Topic | Guide |
 |---|---|
-| Installation and backups | [Docker Compose](docs/deployment/docker.md) · [Kubernetes](docs/deployment/kubernetes.md) |
+| Installation and backups | [Docker Compose](docs/deployment/docker.md) · [Kubernetes](docs/deployment/kubernetes.md) · [PostgreSQL and migration](docs/deployment/postgresql.md) |
 | Statistics and preferences | [Usage](docs/user-guide/usage.md) |
 | Goals, cravings and reminders | [Coaching](docs/user-guide/coaching.md) |
 | Home Screen buttons | [Android widget](docs/user-guide/android.md) · [iPhone shortcut](docs/user-guide/iphone-shortcut.md) |

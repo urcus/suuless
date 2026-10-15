@@ -76,7 +76,7 @@ The web settings show API keys separately from a collapsed **Connected devices**
 
 `DELETE /api/me` requires the account bearer token and `{"password":"CURRENT_PASSWORD","confirm":true}`. Incorrect confirmation/password returns 400, missing or revoked authentication returns 401, and repeated attempts are subject to the existing authentication rate limit. Success returns 204.
 
-One SQLite transaction deletes cravings, daily confirmations, the journey/reference/reminders, consumption entries, all tokens, push subscriptions/outbox entries, synchronization revisions and the user record. Existing SSE clients detect token revocation on their next check. Other accounts are unaffected. Account IDs are never reused: a global numeric high-water mark prevents an old in-flight request from targeting a newly registered account.
+One database transaction deletes cravings, daily confirmations, the journey/reference/reminders, consumption entries, all tokens, push subscriptions/outbox entries, synchronization revisions and the user record. Existing SSE clients detect token revocation on their next check. Other accounts are unaffected. Account IDs are never reused: a global numeric high-water mark prevents an old in-flight request from targeting a newly registered account.
 
 Deletion removes records from the active application database. Administrator backups and CSV files previously exported outside the application are not retroactively erased; their retention is managed separately. IP-based rate-limit counters are shared security metadata, not attached to a user account.
 

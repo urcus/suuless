@@ -84,12 +84,16 @@ kubectl -n stop-clop scale deployment/stop-clop --replicas=0
 kubectl -n stop-clop scale deployment/stop-clop --replicas=1
 ```
 
+## External PostgreSQL
+
+The examples default to SQLite. For external PostgreSQL, supply `DATABASE_URL` from a Secret after migrating existing data. See the [PostgreSQL guide](postgresql.md#kubernetes-configuration) for the container environment fragment and the offline migration procedure. Keep the existing PVC and single replica through the cutover; do not apply a generic example over a private deployment without checking its names and storage.
+
 ## Back up SQLite
 
 While the application is running, use SQLite's backup API and copy the completed database outside the pod:
 
 ```sh
-kubectl -n stop-clop exec deployment/stop-clop -- python -c "import sqlite3; source=sqlite3.connect('/data/stopclop.db'); target=sqlite3.connect('/data/backup.db'); source.backup(target); target.close(); source.close()"
+kubectl -n stop-clop exec deployment/stop-clop -- python -c "import sqlite3; source=sqlite3.connect('/data/stopclop.db'); target=sqlite3.connect('/data/backup.db'); source.backup(target); target.execute('PRAGMA journal_mode=DELETE'); target.close(); source.close()"
 kubectl -n stop-clop exec deployment/stop-clop -- cat /data/backup.db > local/stop-clop-backup.db
 ```
 

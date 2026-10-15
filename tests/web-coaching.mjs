@@ -31,7 +31,7 @@ try{
  // Updating another device must not silently overwrite an unsaved plan.
  await page.locator('[data-view=journey]').click();await page.locator('#journey-motivation').fill('Unsubmitted edit');
  const current=await(await context.request.get(base+'/api/coaching',{headers})).json();await context.request.put(base+'/api/coaching/plan',{headers,data:{version:current.plan.version,reason:'Other device'}});
- await page.locator('#refresh').click();await page.waitForFunction(()=>document.querySelector('#journey-reason').textContent==='Other device');assert.equal(await page.locator('#journey-motivation').inputValue(),'Unsubmitted edit');
+ await page.waitForFunction(()=>!refreshPending&&!activeActions);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForFunction(()=>document.querySelector('#journey-reason').textContent==='Other device');assert.equal(await page.locator('#journey-motivation').inputValue(),'Unsubmitted edit');
  await page.locator('#journey-form button:not([type])').click();await page.waitForFunction(()=>document.querySelector('#message').textContent.includes('another device'));
  await page.locator('[data-view=journey]').click();await page.locator('#reload-journey').click();await page.waitForFunction(()=>document.querySelector('#journey-motivation').value==='Other device');
  await page.locator('#journey-mode').selectOption('quit');await page.locator('#journey-quit').fill(date(0));await page.locator('#journey-form button:not([type])').click();await page.waitForFunction(()=>document.querySelector('#journey-clock').textContent.includes('Since'));

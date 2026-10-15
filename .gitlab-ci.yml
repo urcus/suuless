@@ -44,6 +44,15 @@ quality:api:
     - job: security:npm
       artifacts: false
   image: python:3.13-slim-bookworm
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: suuless_test
+    POSTGRES_PASSWORD: synthetic-test-only
+    POSTGRES_DB: suuless_test
+    # Kubernetes executor: service containers share the job pod's network.
+    TEST_POSTGRES_URL: postgresql://suuless_test:synthetic-test-only@127.0.0.1:5432/suuless_test
   cache:
     key:
       prefix: python-3.13
@@ -52,6 +61,7 @@ quality:api:
   script:
     - python --version
     - pip install -r requirements-dev.txt
+    - python scripts/ci/wait-postgres.py
     - python -m unittest discover -s tests -v
 
 quality:web:

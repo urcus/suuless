@@ -25,7 +25,7 @@ ADMIN_USERNAME=owner
 ADMIN_PASSWORD='replace-with-a-long-unique-password'
 ```
 
-Both `ADMIN_` variables are optional together. When configured, the username must contain 3–40 letters, digits, underscores, dots or hyphens; the password must contain 12–256 characters. The password is passed directly as an environment variable and stored only as a scrypt hash in SQLite. Invalid initial credentials prevent startup without printing their values.
+Both `ADMIN_` variables are optional together. When configured, the username must contain 3–40 letters, digits, underscores, dots or hyphens; the password must contain 12–256 characters. The password is passed directly as an environment variable and stored only as a scrypt hash in the selected database. Invalid initial credentials prevent startup without printing their values.
 
 Creation is transactional and happens once, including with multiple server workers. An existing installation without an initialized administrator receives a dedicated admin account; existing users remain unchanged. Once administrator initialization has completed, changing these variables does not reset a password or create another account. A username already held by an ordinary user is rejected. Deleting the initial account does not recreate it on restart. You can remove the variables after initialization. The initial account has the `admin` role and uses a separate administration interface. See [administration, invitations and SMTP](administration.md).
 
@@ -72,12 +72,16 @@ Passwords use scrypt; only SHA-256 hashes of random bearer tokens are stored. Th
 
 See [synchronization](../development/synchronization.md) for SSE buffering and timeout requirements.
 
+## External PostgreSQL
+
+SQLite remains the default. To use an external PostgreSQL database, set `DATABASE_URL` through `.env` and follow the [PostgreSQL configuration and migration guide](postgresql.md). An existing SQLite installation must be migrated before starting with the new URL; setting it alone does not copy data. Preserve the existing SQLite volume through the cutover. PostgreSQL backups are managed separately.
+
 ## Backups and restoration
 
 SQLite is intended for a single self-hosted instance. Do not scale independent database replicas or place the WAL database on a network filesystem. Use SQLite's backup API while the service is running:
 
 ```sh
-docker compose exec stop-clop python -c "import sqlite3; source=sqlite3.connect('/data/stopclop.db'); target=sqlite3.connect('/data/backup.db'); source.backup(target); target.close(); source.close()"
+docker compose exec stop-clop python -c "import sqlite3; source=sqlite3.connect('/data/stopclop.db'); target=sqlite3.connect('/data/backup.db'); source.backup(target); target.execute('PRAGMA journal_mode=DELETE'); target.close(); source.close()"
 docker compose cp stop-clop:/data/backup.db ./stop-clop-backup.db
 ```
 

@@ -1,7 +1,7 @@
-"""Run one dispatcher alongside the API against the same SQLite volume."""
+"""Run one dispatcher alongside the API against the same application database."""
 from contextlib import closing
 import signal
-import sqlite3
+from .database import connect, DatabaseError
 import time
 from pathlib import Path
 from .app import create_app
@@ -19,14 +19,13 @@ def main():
         stopped = True
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
-    with closing(sqlite3.connect(app.config['DATABASE'], timeout=15)) as conn:
-        conn.execute('PRAGMA foreign_keys=ON')
+    with closing(connect(app.config['DATABASE_TARGET'])) as conn:
         while not stopped:
             try:
                 dispatch(conn, public, internal)
                 # non-secret health marker in the worker container's temporary filesystem.
                 Path('/tmp/push-worker-health').touch()  # nosec B108
-            except sqlite3.Error:
+            except DatabaseError:
                 print('Push dispatcher: database temporarily unavailable', flush=True)
             time.sleep(2)
 
