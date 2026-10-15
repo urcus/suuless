@@ -1,0 +1,147 @@
+{
+  "WFWorkflowActions": [
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.gettext",
+      "WFWorkflowActionParameters": {
+        "CustomOutputName": "suuless_api_key",
+        "UUID": "C2581710-D98E-4A9C-80BD-809843CA46DB",
+        "WFTextActionText": "ENTER_API_KEY_HERE"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.downloadurl",
+      "WFWorkflowActionParameters": {
+        "ShowHeaders": true,
+        "UUID": "A0F9ED09-8CC9-4FDE-855B-B9FBEB6EFDCA",
+        "WFHTTPBodyType": "JSON",
+        "WFHTTPHeaders": {
+          "Value": {
+            "WFDictionaryFieldValueItems": [
+              {
+                "WFItemType": 0,
+                "WFKey": {
+                  "Value": {
+                    "attachmentsByRange": {},
+                    "string": "Authorization"
+                  },
+                  "WFSerializationType": "WFTextTokenString"
+                },
+                "WFValue": {
+                  "WFSerializationType": "WFTextTokenString",
+                  "Value": {
+                    "string": "Bearer ￼",
+                    "attachmentsByRange": {
+                      "{7, 1}": {
+                        "Type": "ActionOutput",
+                        "OutputUUID": "C2581710-D98E-4A9C-80BD-809843CA46DB",
+                        "OutputName": "suuless_api_key"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "WFItemType": 0,
+                "WFKey": {
+                  "Value": {
+                    "attachmentsByRange": {},
+                    "string": "Content-Type"
+                  },
+                  "WFSerializationType": "WFTextTokenString"
+                },
+                "WFValue": {
+                  "Value": {
+                    "attachmentsByRange": {},
+                    "string": "application/json"
+                  },
+                  "WFSerializationType": "WFTextTokenString"
+                }
+              }
+            ]
+          },
+          "WFSerializationType": "WFDictionaryFieldValue"
+        },
+        "WFHTTPMethod": "POST",
+        "WFJSONValues": {
+          "Value": {
+            "WFDictionaryFieldValueItems": [
+              {
+                "WFItemType": 3,
+                "WFKey": {
+                  "Value": {
+                    "attachmentsByRange": {},
+                    "string": "quantity"
+                  },
+                  "WFSerializationType": "WFTextTokenString"
+                },
+                "WFValue": {
+                  "WFSerializationType": "WFTextTokenString",
+                  "Value": {
+                    "string": "1",
+                    "attachmentsByRange": {}
+                  }
+                }
+              },
+              {
+                "WFItemType": 0,
+                "WFKey": {
+                  "Value": {
+                    "attachmentsByRange": {},
+                    "string": "source"
+                  },
+                  "WFSerializationType": "WFTextTokenString"
+                },
+                "WFValue": {
+                  "Value": {
+                    "attachmentsByRange": {},
+                    "string": "api"
+                  },
+                  "WFSerializationType": "WFTextTokenString"
+                }
+              }
+            ]
+          },
+          "WFSerializationType": "WFDictionaryFieldValue"
+        },
+        "WFURL": "https://clope.home.cormerais.eu/api/cigarettes"
+      }
+    },
+    {
+      "WFWorkflowActionIdentifier": "is.workflow.actions.notification",
+      "WFWorkflowActionParameters": {
+        "WFNotificationActionBody": "Request sent. Check SuuLess for the new record.",
+        "WFNotificationActionTitle": "SuuLess +1"
+      }
+    }
+  ],
+  "WFWorkflowIcon": {
+    "WFWorkflowIconGlyphNumber": 59511,
+    "WFWorkflowIconStartColor": 4282601983
+  },
+  "WFWorkflowImportQuestions": [
+    {
+      "ActionIndex": 1,
+      "Category": "Parameter",
+      "DefaultValue": "https://clope.home.cormerais.eu/api/cigarettes",
+      "ParameterKey": "WFURL",
+      "Text": "Enter your SuuLess API endpoint (full URL ending in /api/cigarettes)."
+    },
+    {
+      "ActionIndex": 0,
+      "Category": "Parameter",
+      "DefaultValue": "",
+      "ParameterKey": "WFTextActionText",
+      "Text": "Enter your SuuLess API Key (without Bearer)."
+    }
+  ],
+  "WFWorkflowInputContentItemClasses": [
+    "WFStringContentItem",
+    "WFGenericFileContentItem"
+  ],
+  "WFWorkflowMinimumClientVersion": 900,
+  "WFWorkflowMinimumClientVersionString": "900",
+  "WFWorkflowName": "SuuLess +1",
+  "WFWorkflowTypes": [
+    "NCWidget"
+  ]
+}

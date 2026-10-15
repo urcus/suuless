@@ -28,3 +28,8 @@ signature-verification.json
 # Local configuration and archived files
 /local/
 /old/
+
+# macOS archive metadata
+__MACOSX/
+._*
+.DS_Store

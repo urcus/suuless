@@ -2,7 +2,7 @@
 
 [Documentation](../README.md) · [API guide](../api/README.md)
 
-Use Apple's **Shortcuts** app to record one cigarette from your iPhone Home Screen. You can create this shortcut on the phone itself, without building an iOS app or enrolling in the Apple Developer Program.
+Use Apple's **Shortcuts** app to record one cigarette from your iPhone Home Screen. After creating a personal API key, [install the prepared shortcut](#install-the-prepared-shortcut) or [build it manually](#2-build-the-shortcut). Neither approach requires building an iOS app or enrolling in the Apple Developer Program.
 
 This is a button that sends a request to your SuuLess server. It requires a network connection and does not provide a continuously updated consumption counter or an offline queue. Depending on the actions and permissions, iOS may open Shortcuts or ask for interaction. See [Apple's widget guide](https://support.apple.com/en-by/guide/shortcuts/apd029b36d05/ios).
 
@@ -19,7 +19,26 @@ In the SuuLess web interface, open **Settings & integrations → API keys & sess
 
 The key grants full access to your account and expires after 365 days. Keep it private, revoke it from the same screen if exposed, and replace it in the shortcut when it expires. Do not use your password or a temporary browser session token. Do not share an exported shortcut or an iCloud shortcut link containing your key.
 
+## Install the prepared shortcut
+
+Download [**SuuLess-Plus-One.shortcut**](../../iphone/SuuLess-Plus-One.shortcut), the signed export. On GitHub or GitLab, use the file's **Download / Raw** action to save the actual `.shortcut` file rather than its preview page. The `.UNSIGNED.shortcut` and `.json` files are maintenance sources, not the files to install.
+
+1. Save the file to your iPhone, then open it with **Shortcuts**. Inspect the actions before adding it.
+2. When prompted for **SuuLess API endpoint**, enter your complete endpoint, for example `https://suuless.example.com/api/cigarettes`, replacing the example domain with your server. Include `/api/cigarettes` exactly once, without a trailing slash. The shortcut does not append it automatically.
+3. When prompted for **SuuLess API Key**, paste the personal key created above, without `Bearer `, quotation marks or extra whitespace. The shortcut adds the prefix itself.
+4. In the editor, check that **Get Contents of URL** points to your own HTTPS server. Replace the supplied default address: the current export still contains the author's instance address. Your key will be sent to the configured destination.
+5. Run **SuuLess +1** once, allow access to your server if iOS asks, and check that exactly one new entry appears in SuuLess History. This test records a real cigarette; delete the test entry afterward if needed.
+6. Continue directly to [Add the Home Screen widget](#4-add-the-home-screen-widget). You do not need to rebuild the actions below.
+
+The two answers are saved during setup; they are not requested on each tap. To change them later, edit the URL in **Get Contents of URL** and the key in the first **Text** action. Keep the Authorization header's reference to that Text action.
+
+The prepared shortcut displays **“Request sent. Check SuuLess for the new record.”** It does not verify the returned entry ID. After a timeout or uncertain result, check History before tapping again to avoid duplicates. To add response checking, follow [step 3](#3-confirm-that-the-entry-was-saved), replacing the existing notification with the conditional actions described there.
+
+The signed payload and setup parameters have been inspected, and its request body has been tested against the API. Signature trust, import and execution still need validation on an iPhone. If iOS refuses the file, use the manual instructions below or obtain a fresh export from Apple Shortcuts. See the [shortcut folder README](../../iphone/README.md) for file details and export instructions.
+
 ## 2. Build the shortcut
+
+Use this alternative if you prefer to create the shortcut yourself. If you installed the prepared file, skip to [widget setup](#4-add-the-home-screen-widget), or use step 3 to improve its confirmation behavior.
 
 Create a new shortcut with **+** in Shortcuts and name it **SuuLess +1**. The action names below are in English; their translations and the location of expanded options depend on your iOS version.
 
@@ -47,7 +66,7 @@ Apple describes the URL action, HTTP method and JSON body options in its [web AP
 
 ## 3. Confirm that the entry was saved
 
-After **Get Contents of URL**, add the following actions:
+After **Get Contents of URL**, add the following actions. If you imported the prepared shortcut, first remove its existing **Show Notification** action so it does not run before the response is checked:
 
 1. **Get Dictionary Value**: get the value for `id` from the **Contents of URL** result. A successful SuuLess response contains the saved entry's ID.
 2. **If**: choose the dictionary value as input and the condition **has any value**.

@@ -3,6 +3,7 @@
 .env
 data
 android
+iphone/
 **/__pycache__
 tests
 docs
