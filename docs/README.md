@@ -11,6 +11,7 @@ Start with deployment to run your own instance, or the user guides if you alread
 | [Usage and statistics](user-guide/usage.md) | Entries, charts, historical costs, currencies and time zones |
 | [Journeys and cravings](user-guide/coaching.md) | Goals, confirmations, craving pauses and reminders |
 | [Android](user-guide/android.md) | Installation, screenshots, home-screen widget and signing behavior |
+| [iPhone shortcut](user-guide/iphone-shortcut.md) | Create a SuuLess +1 shortcut and add it as a Home Screen button or widget |
 
 ![SuuLess web dashboard with demonstration data](assets/screenshots/web-today.png)
 
@@ -36,7 +37,7 @@ Start with deployment to run your own instance, or the user guides if you alread
 
 ```text
 docs/
-  user-guide/       Day-to-day use and Android
+  user-guide/       Day-to-day use, Android and iPhone shortcuts
   deployment/       Docker and Kubernetes operations
   development/      Code, tests, architecture and synchronization
   api/              Integration guide and OpenAPI contract

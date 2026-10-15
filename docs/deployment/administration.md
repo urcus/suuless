@@ -105,3 +105,13 @@ Users can add a recovery address in **Settings → Recovery email**, and adminis
 All links are random, single-use, stored only as SHA-256 digests, and consumed atomically. Expired or revoked links cannot be reused. The secret travels in the URL fragment, is removed from browser history on opening, and is submitted only by POST after explicit confirmation. Opening the email URL alone changes nothing. If the page is reloaded before completing the form, reopen the link from the email.
 
 SMTP delivery is synchronous, with a 10-second connection timeout; there is no background mail queue or automatic retry. A failed invitation or initial activation send rolls back the corresponding creation. Recovery requests retain a generic response even on delivery failure; check server logs and test SMTP, then request a new link. All public account email requests share the existing authentication rate limit.
+
+## SMTP troubleshooting
+
+The test action uses the saved effective configuration. With `SMTP_ENABLED` unset, settings come from the administration interface/database. Saving environment variables elsewhere does not change that configuration.
+
+SuuLess uses `SMTP_ENABLED`, `SMTP_FROM` and `SMTP_SECURITY`. Variables named `EMAIL_DELIVERY_ENABLED`, `EMAIL_PROVIDER`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME` and `SMTP_SECURE` are not supported aliases. For implicit TLS on port 465, set `SMTP_SECURITY=tls`; for STARTTLS on port 587, set `SMTP_SECURITY=starttls`. Environment configuration also requires `SMTP_PUBLIC_URL`, the application origin used in account links. Supply passwords through your deployment's secret mechanism; shell and Compose quoting rules still apply.
+
+A successful test means the SMTP relay accepted the message, not that the recipient received it. Check spam, sender bounce messages and provider delivery reports. Use a sender address or alias authorized by your provider. Its domain must resolve publicly and have the provider's appropriate SPF/DKIM/DMARC configuration; authenticating as a mailbox on another domain does not by itself authorize the From address.
+
+The `suuless.smtp` logger writes submission start, acceptance and failures to application stderr. Correlate events using the generated `event` identifier. Failures include the stage (`connect`, `starttls`, `authenticate`, `submit`, `disconnect`), exception class and numeric SMTP code when available. Logs intentionally exclude credentials, recipient addresses, subjects, message bodies and raw SMTP responses. Accepted messages have `delivery=unconfirmed`; there is no delivery-receipt tracking. Do not enable raw SMTP debug output in production, because it can expose authentication material and account links.

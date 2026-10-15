@@ -354,7 +354,7 @@
   "password_configured": "Mot de passe enregistré",
   "smtp_note": "Une fois activé, les nouvelles inscriptions publiques nécessitent une activation par courriel. Les comptes existants restent accessibles. Enregistrez avant de tester.",
   "send_test": "Envoyer un courriel de test",
-  "mail_sent": "Courriel envoyé.",
+  "mail_sent": "Message accepté par le serveur SMTP. La réception n’est pas confirmée ; vérifiez les indésirables et les avis de non-remise de l’expéditeur.",
   "forgot_password": "Mot de passe oublié ?",
   "resend_activation": "Renvoyer l’activation",
   "request_email": "Envoyer le lien",

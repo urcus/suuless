@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SuuLess +1 on iPhone</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:32px;background:#f5f5f5;color:#2d3142;font-family:Geist,Arial,sans-serif}main{max-width:1040px;min-width:0;margin:auto}h1{font:400 28px 'Instrument Serif',Georgia,serif}p{line-height:1.6;color:#4f5d75}.diagram-container{width:100%;overflow-x:auto}svg{display:block;width:100%;min-width:960px}.node{fill:#f5f5f5;stroke:#4f5d75}.focal{fill:#f7e9e2;stroke:#bf4520}.name{font:600 12px Geist,Arial,sans-serif;fill:#2d3142}.sub{font:9px 'Geist Mono',monospace;fill:#4f5d75}.label{font:8px 'Geist Mono',monospace;fill:#4f5d75}.wire{fill:none;stroke:#4f5d75;stroke-width:1.5;marker-end:url(#iphone-shortcut-arrow)}
+@media print{body{padding:0}.diagram-container{overflow:visible}svg{min-width:0}}
+</style>
+</head>
+<body><main>
+<h1>SuuLess +1 on iPhone</h1>
+<p>Configuration schematic, not an iOS screenshot. Follow the guide for exact field types and widget setup.</p>
+<div class="diagram-container">
+<svg viewBox="0 0 960 600" role="img" aria-labelledby="iphone-shortcut-title iphone-shortcut-desc">
+<title id="iphone-shortcut-title">SuuLess +1 shortcut</title>
+<desc id="iphone-shortcut-desc">The shortcut sends an authenticated request and confirms success only when the response contains an entry ID.</desc>
+<defs><marker id="iphone-shortcut-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#4f5d75"/></marker></defs>
+<rect width="960" height="600" fill="#f5f5f5"/>
+<path class="wire" d="M260 96V128"/>
+<path class="wire" d="M260 256V288"/>
+<path class="wire" d="M260 336V368"/>
+<path class="wire" d="M380 416H600"/>
+<path class="wire" d="M260 464V496"/>
+<rect x="468" y="392" width="44" height="16" fill="#f5f5f5"/>
+<text class="label" x="490" y="403" text-anchor="middle">YES</text>
+<rect x="276" y="472" width="32" height="16" fill="#f5f5f5"/>
+<text class="label" x="292" y="483" text-anchor="middle">NO</text>
+<rect class="node" x="80" y="48" width="360" height="48" rx="20"/>
+<text class="name" x="260" y="77" text-anchor="middle">Tap SuuLess +1</text>
+<rect class="focal" x="80" y="128" width="360" height="128" rx="6"/>
+<text class="name" x="104" y="152">URL → Get Contents of URL</text>
+<text class="sub" x="104" y="176">POST https://YOUR_SERVER/api/cigarettes</text>
+<text class="sub" x="104" y="196">Authorization: Bearer YOUR_API_KEY</text>
+<text class="sub" x="104" y="216">Content-Type: application/json</text>
+<text class="sub" x="104" y="236">JSON: quantity = 1 (Number), source = api (Text)</text>
+<rect class="node" x="80" y="288" width="360" height="48" rx="6"/>
+<text class="name" x="260" y="308" text-anchor="middle">Get Dictionary Value</text>
+<text class="sub" x="260" y="324" text-anchor="middle">id from Contents of URL</text>
+<path class="node" d="M260 368L380 416L260 464L140 416Z"/>
+<text class="name" x="260" y="420" text-anchor="middle">id has any value?</text>
+<rect class="focal" x="600" y="392" width="280" height="48" rx="6"/>
+<text class="name" x="740" y="412" text-anchor="middle">Show Notification</text>
+<text class="sub" x="740" y="428" text-anchor="middle">SuuLess: +1 saved</text>
+<rect class="node" x="80" y="496" width="360" height="48" rx="6"/>
+<text class="name" x="260" y="516" text-anchor="middle">Show Alert: entry not confirmed</text>
+<text class="sub" x="260" y="532" text-anchor="middle">Check History before trying again.</text>
+<line x1="40" y1="560" x2="920" y2="560" stroke="#bfc0c0"/>
+<text class="sub" x="40" y="580">Network / HTTP errors may stop execution before the condition. No automatic retry or offline queue.</text>
+</svg>
+</div>
+<p>The API key is a placeholder. The successful response contains a saved entry ID; notification display itself depends on iOS permissions.</p>
+</main></body></html>

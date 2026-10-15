@@ -1,6 +1,7 @@
 """Administration and single-use email account workflows."""
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -8,12 +9,21 @@ import smtplib
 import ssl
 from datetime import timedelta
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 from urllib.parse import urlsplit
+
+from flask.logging import default_handler
 
 from flask import current_app, g, jsonify, request, send_from_directory
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from .international import LANGUAGES, translate
+
+MAIL_LOG = logging.getLogger('suuless.smtp')
+MAIL_LOG.setLevel(logging.INFO)
+if not MAIL_LOG.handlers:
+    MAIL_LOG.addHandler(default_handler)
+MAIL_LOG.propagate = False
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS mail_settings (id INTEGER PRIMARY KEY CHECK(id=1), config TEXT NOT NULL);
@@ -87,17 +97,37 @@ def send_mail(config, recipient, subject, content):
     message['To'] = recipient
     message['Subject'] = subject
     message.set_content(content)
-    context = ssl.create_default_context()
-    factory = smtplib.SMTP_SSL if config['security'] == 'tls' else smtplib.SMTP
-    options = {'timeout': 10}
-    if config['security'] == 'tls':
-        options['context'] = context
-    with factory(config['host'], config['port'], **options) as smtp:
-        if config['security'] == 'starttls':
-            smtp.starttls(context=context)
-        if config['username']:
-            smtp.login(config['username'], config['password'])
-        smtp.send_message(message)
+    message['Date'] = formatdate(localtime=False, usegmt=True)
+    message['Message-ID'] = make_msgid(domain=config['sender'].rsplit('@', 1)[-1])
+    event_id = secrets.token_hex(8)
+    stage = 'connect'
+    MAIL_LOG.info('SMTP submission started event=%s', event_id)
+    try:
+        context = ssl.create_default_context()
+        factory = smtplib.SMTP_SSL if config['security'] == 'tls' else smtplib.SMTP
+        options = {'timeout': 10}
+        if config['security'] == 'tls':
+            options['context'] = context
+        with factory(config['host'], config['port'], **options) as smtp:
+            if config['security'] == 'starttls':
+                stage = 'starttls'
+                smtp.starttls(context=context)
+            if config['username']:
+                stage = 'authenticate'
+                smtp.login(config['username'], config['password'])
+            stage = 'submit'
+            refused = smtp.send_message(message)
+            if refused:
+                raise smtplib.SMTPRecipientsRefused(refused)
+            MAIL_LOG.info('SMTP submission accepted event=%s delivery=unconfirmed', event_id)
+            stage = 'disconnect'
+    except (OSError, smtplib.SMTPException) as error:
+        code = getattr(error, 'smtp_code', None)
+        # SMTP responses can contain addresses, credentials or message content.
+        # Log only the stage, exception class and numeric response code.
+        MAIL_LOG.warning('SMTP submission failed event=%s stage=%s error=%s smtp_code=%s',
+                         event_id, stage, type(error).__name__, code if isinstance(code, int) else 'unavailable')
+        raise
 
 
 def register_routes(app, db, body, fail, now, stamp, auth_limit):

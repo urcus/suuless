@@ -1,4 +1,4 @@
-# HTTP API and Stream Deck
+# HTTP API and integrations
 
 [Documentation](../README.md) · [Project home](../../README.md)
 
@@ -25,6 +25,10 @@ An optional `Idempotency-Key` (1–100 ASCII letters, digits, `_`, `.`, `:`, `-`
 Statistics include today, all-time totals, the selected period and daily totals. Today and all-time totals are independent of the filter. `analysis` adds period averages, previous-period comparisons, daily deviations, a moving average over at most seven days, 24 hourly buckets, seven weekday buckets (Monday = 0), and a 30-day projection based on completed days. Percentages with a zero reference are `null`; unavailable previous periods have null boundaries and quantity deltas. Projections without completed days have null quantity and empty costs.
 
 Costs retain the price and currency at entry time, in millionths of a currency unit. Totals are accumulated by currency before rounding, so rounded individual costs may not sum exactly to the rounded total. `costs` is a currency-to-number map. Legacy scalar `cost` and `currency` are null for mixed currencies. Empty totals contain zero in the account currency. The CSV has a UTF-8 BOM and stable columns `id,local_datetime,quantity,cost,currency,source`.
+
+## iPhone Shortcuts
+
+The [SuuLess +1 guide](../user-guide/iphone-shortcut.md) shows how to configure an authenticated JSON request in Apple Shortcuts and add it to the Home Screen. It uses `POST /api/cigarettes` with `{"quantity":1,"source":"api"}` and a personal API key; no additional endpoint or native iOS app is required.
 
 ## Stream Deck
 

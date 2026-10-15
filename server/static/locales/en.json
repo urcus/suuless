@@ -354,7 +354,7 @@
   "password_configured": "Password saved",
   "smtp_note": "When enabled, new public registrations require email activation. Existing accounts remain accessible. Save before testing.",
   "send_test": "Send test email",
-  "mail_sent": "Email sent.",
+  "mail_sent": "Accepted by the SMTP server. Inbox delivery is not confirmed; check spam and the sender’s delivery reports.",
   "forgot_password": "Forgot password?",
   "resend_activation": "Resend activation",
   "request_email": "Send link",

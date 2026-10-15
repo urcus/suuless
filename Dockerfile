@@ -3,8 +3,10 @@ FROM python:3.13.16-alpine3.24@sha256:2d9aefe2fef018a7eb2c13064c89c71929800fd2e5
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 DATABASE=/data/stopclop.db
 WORKDIR /app
 COPY requirements.txt .
+# The pinned base predates Alpine's CVE-2026-85091 fix; require the patched zlib.
 # Installation tools and their vendored dependencies are not needed at runtime.
 RUN umask 022 \
+    && apk add --no-cache --upgrade "zlib>=1.3.2-r1" \
     && python -m pip install --no-cache-dir --only-binary=:all: -r requirements.txt \
     && python -m pip uninstall -y pip \
     && rm -rf /usr/local/lib/python3.13/ensurepip \

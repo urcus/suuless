@@ -22,7 +22,7 @@ try{
  for(const [key,value] of Object.entries({host:'smtp.example.com',port:'587',username:'mailer',password:'smtp-browser-secret',sender:'suuless@example.com',public_url:base}))await smtp.locator(`[name=${key}]`).fill(value);
  await smtp.locator('button').click();await page.waitForFunction(()=>document.getElementById('smtp-password-state').textContent.length>0);
  assert.equal(await smtp.locator('[name=password]').inputValue(),'');
- await page.locator('#smtp-test-form [name=email]').fill('test@example.com');await page.locator('#smtp-test-form button').click();await page.waitForFunction(()=>document.getElementById('portal-message').textContent==='Email sent.');
+ await page.locator('#smtp-test-form [name=email]').fill('test@example.com');await page.locator('#smtp-test-form button').click();await page.waitForFunction(()=>document.getElementById('portal-message').textContent.includes('Accepted by the SMTP server.'));
  assert.equal((await mail()).recipient,'test@example.com');
  const registering=await browser.newPage();await registering.goto(base);await registering.locator('#auth-switch').click();
  await registering.locator('#auth-form [name=username]').fill('registered');await registering.locator('#auth-form [name=password]').fill('registered-browser-password');await registering.locator('#auth-email').fill('registered@example.com');await registering.locator('#auth-submit').click();

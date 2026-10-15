@@ -23,5 +23,8 @@ Each diagram has an editable, standalone HTML source and an SVG for direct Markd
 | Account synchronization | [HTML](diagrams/push-sync.html) | [SVG](diagrams/push-sync.svg) |
 | Craving outcomes | [HTML](diagrams/coaching.html) | [SVG](diagrams/coaching.svg) |
 | Kubernetes example | [HTML](diagrams/kubernetes.html) | [SVG](diagrams/kubernetes.svg) |
+| iPhone shortcut actions | [HTML](diagrams/iphone-shortcut.html) | [SVG](diagrams/iphone-shortcut.svg) |
+
+The iPhone figure is a configuration schematic based on the SuuLess API and Apple's Shortcuts documentation, not a device screenshot. It contains placeholder credentials only. The shortcut has not yet been validated on an iPhone; future device captures should use a synthetic account and hide the API key.
 
 Diagrams are maintained with `diagram-design`. The Kubernetes diagram describes the public example resources; it contains no private installation topology. Keep diagrams concise, provide descriptive alternative text in guides, and verify that labels fit after edits.

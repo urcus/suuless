@@ -198,12 +198,14 @@ class SMTPTransportTest(unittest.TestCase):
     def test_tls_and_starttls_verify_certificates(self):
         config=dict(host='mail.example.com',port=587,security='starttls',username='user',password='secret',sender='sender@example.com')
         with patch('server.accounts.smtplib.SMTP') as factory:
+            factory.return_value.__enter__.return_value.send_message.return_value = {}
             send_mail(config,'to@example.com','Test','Content')
             smtp=factory.return_value.__enter__.return_value
             self.assertTrue(smtp.starttls.call_args.kwargs['context'].check_hostname)
             smtp.login.assert_called_once_with('user','secret')
             smtp.send_message.assert_called_once()
         with patch('server.accounts.smtplib.SMTP_SSL') as factory:
+            factory.return_value.__enter__.return_value.send_message.return_value = {}
             send_mail(dict(config,security='tls'),'to@example.com','Test','Content')
             self.assertTrue(factory.call_args.kwargs['context'].check_hostname)
             factory.return_value.__enter__.return_value.starttls.assert_not_called()

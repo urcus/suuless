@@ -19,7 +19,7 @@ try{
  assert.ok(!(await page.content()).includes('smtp-env-test-secret'));
  const token=await page.evaluate(()=>sessionStorage.getItem('stop-clop-token'));
  assert.equal((await page.request.put(base+'/api/admin/smtp',{headers:{Authorization:'Bearer '+token},data:{enabled:false}})).status(),409);
- await page.locator('#smtp-test-form [name=email]').fill('test@example.com');await page.locator('#smtp-test-form button').click();await page.waitForFunction(()=>document.getElementById('portal-message').textContent==='Email sent.');
+ await page.locator('#smtp-test-form [name=email]').fill('test@example.com');await page.locator('#smtp-test-form button').click();await page.waitForFunction(()=>document.getElementById('portal-message').textContent.includes('Accepted by the SMTP server.'));
  assert.equal(JSON.parse(await readFile(join(temp,'mail.json'),'utf8')).recipient,'test@example.com');
  await page.locator('#portal-language').selectOption('fr');await page.waitForFunction(()=>document.getElementById('smtp-environment-note').textContent.includes('variables d’environnement'));
  assert.deepEqual(errors,[]);console.log('SMTP environment web OK: effective settings, read-only fields, password redaction, API conflict and test delivery.');

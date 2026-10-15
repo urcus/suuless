@@ -39,11 +39,13 @@ See the [installation guide](docs/deployment/docker.md) for network access, regi
 
 Configure administrator access and mail delivery using the [administration guide](docs/deployment/administration.md).
 
-## Android and Stream Deck
+## Android, iPhone and Stream Deck
 
 The native app requires Android 8.0 or later. The [Android guide](docs/user-guide/android.md) covers building, installing, connecting and using the widget. CI produces an installable debug APK and an unsigned release APK; the latter requires signing before installation. No Play Store publication is configured.
 
 See the [dashboard](docs/assets/screenshots/android-today.png) and [analysis](docs/assets/screenshots/android-analysis.png) screenshots, captured with the French interface on a demo account. Stream Deck uses an HTTP action described in the [API guide](docs/api/README.md#stream-deck).
+
+On iPhone, create a **SuuLess +1** button with Apple Shortcuts and add it to your Home Screen. The [illustrated iPhone guide](docs/user-guide/iphone-shortcut.md) covers the API key, shortcut actions and widget setup. This requires a connection to your server; no native iOS app is provided.
 
 ## Documentation
 
@@ -52,6 +54,7 @@ See the [dashboard](docs/assets/screenshots/android-today.png) and [analysis](do
 | Installation and backups | [Docker Compose](docs/deployment/docker.md) · [Kubernetes](docs/deployment/kubernetes.md) |
 | Statistics and preferences | [Usage](docs/user-guide/usage.md) |
 | Goals, cravings and reminders | [Coaching](docs/user-guide/coaching.md) |
+| Home Screen buttons | [Android widget](docs/user-guide/android.md) · [iPhone shortcut](docs/user-guide/iphone-shortcut.md) |
 | API and automation | [API guide](docs/api/README.md) · [OpenAPI specification](docs/api/openapi.yaml) |
 | Code and tests | [Development](docs/development/README.md) |
 | Components and storage | [Architecture](docs/development/architecture.md) |
